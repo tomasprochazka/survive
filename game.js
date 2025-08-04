@@ -372,13 +372,11 @@ class Game {
     }
     
     drawCirclePath() {
-        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-        this.ctx.lineWidth = 5;
-        // this.ctx.setLineDash([5, 5]);
+        this.ctx.strokeStyle = 'red';
+        this.ctx.lineWidth = 2;
         this.ctx.beginPath();
         this.ctx.arc(this.centerX, this.centerY, this.circleRadius, 0, Math.PI * 2);
         this.ctx.stroke();
-        this.ctx.setLineDash([]);
     }
     
     drawFireballs() {
