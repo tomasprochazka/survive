@@ -695,6 +695,25 @@ function setupDebugControls() {
         fireballSpeedValue.textContent = value;
         game.saveConfig();
     });
+
+    // Cheat Mode Toggle
+    const cheatModeToggle = document.getElementById('cheatModeToggle');
+    const updateCheatModeButton = () => {
+        if (game.cheatMode) {
+            cheatModeToggle.textContent = 'Cheat Mode: ON';
+            cheatModeToggle.style.background = '#10B981';
+        } else {
+            cheatModeToggle.textContent = 'Cheat Mode: OFF';
+            cheatModeToggle.style.background = '#DC2626';
+        }
+    };
+    
+    updateCheatModeButton();
+    
+    cheatModeToggle.addEventListener('click', () => {
+        game.toggleCheatMode();
+        updateCheatModeButton();
+    });
 }
 
 // Initialize game when page loads
