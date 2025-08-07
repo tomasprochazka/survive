@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+  <title>TRON Tetris – 3D Neon</title>
+  <style>
+    html, body { margin:0; padding:0; height:100%; background:#000; color:#0ff; font-family: system-ui, -apple-system, Roboto, Segoe UI, sans-serif; }
+    #game { position:fixed; inset:0; touch-action:none; }
+    #hud {
+      position: fixed; left: 12px; top: 12px; right:12px; display:flex; justify-content:space-between; align-items:center;
+      mix-blend-mode:screen; pointer-events:none; text-shadow: 0 0 8px #0ff;
+      font-weight:600; letter-spacing:.5px;
+    }
+    #hud .btns { pointer-events:auto; display:flex; gap:8px; }
+    .btn {
+      border:1px solid rgba(0,255,255,.4); border-radius:10px; padding:8px 10px; background: rgba(0,255,255,.06);
+      box-shadow: inset 0 0 12px rgba(0,255,255,.25), 0 0 12px rgba(0,255,255,.15);
+      color:#7ff; font-weight:700;
+      user-select:none;
+    }
+    #footer {
+      position: fixed; bottom: 10px; left: 12px; right: 12px; display:flex; justify-content:space-between; gap:8px;
+      mix-blend-mode:screen;
+    }
+    .pill { flex:1; text-align:center; padding:10px; border-radius:12px; border:1px solid rgba(0,255,255,.35); background: rgba(0,255,255,.05); color:#7ff; font-weight:700; box-shadow: inset 0 0 12px rgba(0,255,255,.25), 0 0 16px rgba(0,255,255,.15); }
+    #msg { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align:center; color:#0ff; text-shadow:0 0 12px #0ff; font-size:18px; display:none; }
+    a { color:#0ff; }
+  </style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <div id="hud">
+    <div id="score">SCORE 0</div>
+    <div class="btns">
+      <div id="pauseBtn" class="btn">PAUSE</div>
+      <div id="restartBtn" class="btn">RESTART</div>
+    </div>
+  </div>
+  <div id="footer">
+    <div class="pill">Tap LEFT = ◀︎</div>
+    <div class="pill">Swipe ↔ rotate (Y)</div>
+    <div class="pill">Swipe ↕ rotate (X)</div>
+    <div class="pill">Swipe ↓ = soft drop • Double‑tap = HARD DROP</div>
+  </div>
+  <div id="msg"></div>
+
+  <!-- Three.js & postprocessing (CDN) -->
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/examples/js/postprocessing/EffectComposer.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/examples/js/postprocessing/RenderPass.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+
+  <script>
+  (() => {
+    // --- Game constants ---
+    const COLS = 10, ROWS = 20;              // classic Tetris grid
+    const CELL = 1;                           // world units per block
+    const DROP_INTERVAL_START = 800;          // ms, speed will accelerate
+    const SPEEDUP_PER_LINE = 6;               // lower is faster per clear
+    const MAX_LEVEL = 12;
+
+    // Tetromino shapes (in 4x4 matrices) - classic 2D logic, but rendered as 3D
+    const SHAPES = {
+      I: [[0,0,0,0],
+          [1,1,1,1],
+          [0,0,0,0],
+          [0,0,0,0]],
+      J: [[1,0,0],
+          [1,1,1],
+          [0,0,0]],
+      L: [[0,0,1],
+          [1,1,1],
+          [0,0,0]],
+      O: [[1,1],
+          [1,1]],
+      S: [[0,1,1],
+          [1,1,0],
+          [0,0,0]],
+      T: [[0,1,0],
+          [1,1,1],
+          [0,0,0]],
+      Z: [[1,1,0],
+          [0,1,1],
+          [0,0,0]]
+    };
+    const BAG = Object.keys(SHAPES);
+
+    // --- THREE scene ---
+    const canvas = document.getElementById('game');
+    const renderer = new THREE.WebGLRenderer({canvas, antialias:true, powerPreference:'high-performance'});
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x000000);
+
+    const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 100);
+    camera.position.set(8, 14, 18);
+    camera.lookAt(0, 8, 0);
+
+    // Neon-ish ambient + rim light
+    const ambient = new THREE.AmbientLight(0x0ffeff, 0.22);
+    scene.add(ambient);
+    const dir = new THREE.DirectionalLight(0x00ffff, 0.9);
+    dir.position.set(6, 12, 10);
+    scene.add(dir);
+
+    // Grid floor (Tron vibes)
+    const grid = new THREE.GridHelper(60, 60, 0x00ffff, 0x002a2a);
+    grid.material.opacity = 0.25;
+    grid.material.transparent = true;
+    grid.position.y = -0.5;
+    scene.add(grid);
+
+    // Playfield "frame" (neon rails)
+    const frame = new THREE.Group();
+    const railMat = new THREE.MeshBasicMaterial({color:0x00ffff});
+    const railGeo = new THREE.BoxGeometry(0.1, ROWS*CELL + 0.2, 0.1);
+    const leftRail = new THREE.Mesh(railGeo, railMat);
+    leftRail.position.set(-COLS*CELL/2 - 0.55, ROWS*CELL/2 - 0.5, 0);
+    const rightRail = leftRail.clone();
+    rightRail.position.x = +COLS*CELL/2 + 0.55;
+    const topRail = new THREE.Mesh(new THREE.BoxGeometry(COLS*CELL + 1.2, 0.12, 0.12), railMat);
+    topRail.position.set(0, ROWS*CELL + -0.5, 0);
+    frame.add(leftRail, rightRail, topRail);
+    scene.add(frame);
+
+    // Bloom post-processing for glow
+    const composer = new THREE.EffectComposer(renderer);
+    const renderPass = new THREE.RenderPass(scene, camera);
+    composer.addPass(renderPass);
+    const bloom = new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.85, 0.6, 0.85);
+    composer.addPass(bloom);
+
+    // --- Materials ---
+    const neonColors = [0x00ffff, 0x00ffee, 0x66ffff, 0x22ffee, 0x00ddff, 0x44ffee, 0x22ccff];
+    const blockMaterials = neonColors.map(c => new THREE.MeshStandardMaterial({
+      color: c, emissive: c, emissiveIntensity: 0.7, metalness: 0.2, roughness: 0.15
+    }));
+    const glassMat = new THREE.MeshStandardMaterial({ color:0x001a1a, transparent:true, opacity:0.08, roughness: 0.7, metalness:0.0 });
+
+    // Playfield ground (glass)
+    const ground = new THREE.Mesh(new THREE.BoxGeometry(COLS*CELL + 0.6, 0.08, CELL + 4), glassMat);
+    ground.position.set(0, -0.54, 0);
+    scene.add(ground);
+
+    // --- Game state ---
+    let field = createField(COLS, ROWS);
+    let current = null;
+    let nextBag = [];
+    let dropInterval = DROP_INTERVAL_START;
+    let dropTimer = 0;
+    let score = 0, lines = 0, level = 0;
+    let paused = false;
+    let hardDropping = false;
+
+    // --- Mesh pools ---
+    const cellGeo = new THREE.BoxGeometry(CELL*0.98, CELL*0.98, CELL*0.98);
+    function makeBlock(materialIndex) {
+      const mesh = new THREE.Mesh(cellGeo, blockMaterials[materialIndex % blockMaterials.length]);
+      mesh.castShadow = false; mesh.receiveShadow = false;
+      mesh.userData.type = 'block';
+      return mesh;
+    }
+
+    const worldGroup = new THREE.Group(); // holds all block meshes
+    scene.add(worldGroup);
+
+    function createField(w,h){
+      const a = new Array(h);
+      for(let y=0;y<h;y++){ a[y]=new Array(w).fill(0); }
+      return a;
+    }
+
+    function spawnPiece(){
+      if (nextBag.length === 0) nextBag = shuffle([...BAG]);
+      const type = nextBag.pop();
+      const shape = SHAPES[type].map(row=>row.slice());
+      const colorIndex = Math.floor(Math.random()*neonColors.length);
+      const piece = { type, shape, x: Math.floor(COLS/2)-2, y: ROWS-1, rotX:0, rotY:0, colorIndex, meshes:[] };
+      // Pre-build meshes
+      piece.meshes = buildPieceMeshes(piece);
+      setPieceWorldPositions(piece);
+      return piece;
+    }
+
+    function buildPieceMeshes(piece){
+      // remove any previous
+      return blocksFromShape(piece.shape, piece.colorIndex);
+    }
+
+    function blocksFromShape(shape, colorIndex){
+      const meshes = [];
+      for(let r=0;r<shape.length;r++){
+        for(let c=0;c<shape[r].length;c++){
+          if (shape[r][c]) {
+            const m = makeBlock(colorIndex);
+            worldGroup.add(m);
+            meshes.push({mesh:m, r, c});
+          }
+        }
+      }
+      return meshes;
+    }
+
+    function rotateMatrix(mat){
+      const n = mat.length, m = mat[0].length;
+      const res = Array.from({length:m}, _=> Array(n).fill(0));
+      for(let r=0;r<n;r++) for(let c=0;c<m;c++) res[c][n-1-r] = mat[r][c];
+      return res;
+    }
+
+    function collide(field, piece, nx=piece.x, ny=piece.y, nshape=piece.shape){
+      for(let r=0;r<nshape.length;r++){
+        for(let c=0;c<nshape[r].length;c++){
+          if (!nshape[r][c]) continue;
+          const fx = nx + c;
+          const fy = ny - r;
+          if (fx < 0 || fx >= COLS || fy < 0) return true;
+          if (fy < ROWS && field[fy][fx]) return true;
+        }
+      }
+      return false;
+    }
+
+    function merge(field, piece){
+      for(let r=0;r<piece.shape.length;r++){
+        for(let c=0;c<piece.shape[r].length;c++){
+          if (!piece.shape[r][c]) continue;
+          const fx = piece.x + c;
+          const fy = piece.y - r;
+          if (fy >= 0 && fy < ROWS) field[fy][fx] = { colorIndex: piece.colorIndex };
+        }
+      }
+    }
+
+    function clearLines(){
+      let cleared = 0;
+      for(let y=0;y<ROWS;y++){
+        if (field[y].every(cell => cell)) {
+          field.splice(y,1);
+          field.push(new Array(COLS).fill(0));
+          cleared++;
+          y--;
+        }
+      }
+      if (cleared){
+        const points = [0, 100, 300, 500, 800][cleared] || 1200;
+        score += points * (1+level*0.25);
+        lines += cleared;
+        level = Math.min(MAX_LEVEL, Math.floor(lines / SPEEDUP_PER_LINE));
+        dropInterval = Math.max(90, DROP_INTERVAL_START - level*60 - cleared*30);
+        updateHUD();
+        rebuildStaticMeshes();
+      }
+    }
+
+    function rebuildStaticMeshes(){
+      // First remove all meshes except current piece
+      worldGroup.children = worldGroup.children.filter(ch => ch.userData.type === 'block' && current && current.meshes.some(m=>m.mesh===ch));
+      // Now add back field cubes
+      for(let y=0;y<ROWS;y++){
+        for(let x=0;x<COLS;x++){
+          const cell = field[y][x];
+          if (cell){
+            const m = makeBlock(cell.colorIndex);
+            m.position.set((x - COLS/2 + 0.5)*CELL, (y + 0.5 - 1)*CELL, 0);
+            worldGroup.add(m);
+          }
+        }
+      }
+    }
+
+    function setPieceWorldPositions(piece){
+      // Position meshes to match piece position/state
+      const baseX = (piece.x - COLS/2 + 0.5)*CELL;
+      const baseY = (piece.y + 0.5 - 1)*CELL;
+      for(const bm of piece.meshes){
+        const wx = baseX + bm.c*CELL;
+        const wy = baseY - bm.r*CELL;
+        bm.mesh.position.set(wx, wy, 0);
+      }
+      // Apply nice visual tilt based on rotX / rotY (for Tron flair)
+      for(const bm of piece.meshes){
+        bm.mesh.rotation.set(piece.rotX, piece.rotY, 0);
+      }
+    }
+
+    function rotatePieceZ(piece){
+      const rotated = rotateMatrix(piece.shape);
+      // Wall kicks (simple)
+      const kicks = [0, -1, +1, -2, +2];
+      for (const dx of kicks){
+        if (!collide(field, piece, piece.x + dx, piece.y, rotated)) {
+          piece.shape = rotated;
+          piece.x += dx;
+          // Rebuild meshes to match new footprint
+          for(const {mesh} of piece.meshes) worldGroup.remove(mesh);
+          piece.meshes = buildPieceMeshes(piece);
+          setPieceWorldPositions(piece);
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function move(piece, dx, dy){
+      if (!collide(field, piece, piece.x + dx, piece.y + dy)){
+        piece.x += dx; piece.y += dy;
+        setPieceWorldPositions(piece);
+        return true;
+      }
+      return false;
+    }
+
+    function hardDrop(piece){
+      let dropped = 0;
+      while (move(piece, 0, -1)) dropped++;
+      return dropped;
+    }
+
+    function updateHUD(){
+      document.getElementById('score').textContent = `SCORE ${Math.floor(score)}`;
+    }
+
+    // --- Controls ---
+    let touchStart = null;
+    let lastTapTime = 0;
+    canvas.addEventListener('touchstart', (e)=>{
+      if (paused) return;
+      if (e.touches.length === 1) {
+        const now = performance.now();
+        if (now - lastTapTime < 260) {
+          // double tap => hard drop
+          if (current && !hardDropping){ hardDropping = true; hardDrop(current); }
+          e.preventDefault();
+          return;
+        }
+        lastTapTime = now;
+        touchStart = { x:e.touches[0].clientX, y:e.touches[0].clientY, t:now };
+      }
+    }, {passive:false});
+
+    canvas.addEventListener('touchmove', (e)=>{
+      if (paused || !touchStart || !current) return;
+      const dx = e.touches[0].clientX - touchStart.x;
+      const dy = e.touches[0].clientY - touchStart.y;
+      const absx = Math.abs(dx), absy = Math.abs(dy);
+      const threshold = Math.min(innerWidth, innerHeight) * 0.06; // ~6% swipe
+
+      if (absy > absx && absy > threshold){
+        // vertical swipe -> rotate X (visual) AND rotate piece (Z) for gameplay
+        if (rotatePieceZ(current)) current.rotX += Math.sign(dy)*Math.PI/18;
+        touchStart = null;
+      } else if (absx > absy && absx > threshold){
+        // horizontal swipe -> rotate Y (visual) AND rotate piece (Z) for gameplay
+        if (rotatePieceZ(current)) current.rotY += Math.sign(dx)*Math.PI/18;
+        touchStart = null;
+      } else if (dy > threshold*0.7){
+        // gentle downward drag => soft drop
+        move(current, 0, -1);
+      }
+      e.preventDefault();
+    }, {passive:false});
+
+    canvas.addEventListener('touchend', (e)=>{
+      if (paused || !current) return;
+      // Tap left/right to move
+      if (touchStart){
+        const x = touchStart.x;
+        if (x < innerWidth*0.48) move(current, -1, 0);
+        else move(current, +1, 0);
+      }
+      touchStart = null;
+    });
+
+    // Buttons
+    document.getElementById('pauseBtn').addEventListener('click', ()=>{
+      paused = !paused;
+      document.getElementById('pauseBtn').textContent = paused ? 'RESUME' : 'PAUSE';
+      document.getElementById('msg').style.display = paused ? 'block' : 'none';
+      document.getElementById('msg').textContent = paused ? 'Paused' : '';
+    });
+    document.getElementById('restartBtn').addEventListener('click', ()=>resetGame());
+
+    // Keyboard fallback (desktop)
+    window.addEventListener('keydown', (e)=>{
+      if (!current || paused) return;
+      if (e.key === 'ArrowLeft') move(current, -1, 0);
+      else if (e.key === 'ArrowRight') move(current, +1, 0);
+      else if (e.key === 'ArrowDown') move(current, 0, -1);
+      else if (e.key === ' ') { hardDrop(current); }
+      else if (e.key === 'ArrowUp') rotatePieceZ(current);
+    });
+
+    // --- Game loop ---
+    function resetGame(){
+      // Clean meshes
+      for(const ch of [...worldGroup.children]) worldGroup.remove(ch);
+      scene.add(worldGroup);
+      field = createField(COLS, ROWS);
+      nextBag = [];
+      dropInterval = DROP_INTERVAL_START;
+      dropTimer = 0;
+      score = 0; lines = 0; level = 0;
+      updateHUD();
+      current = spawnPiece();
+      paused = false; hardDropping = false;
+      document.getElementById('msg').style.display = 'none';
+    }
+
+    function gameOver(){
+      paused = true;
+      document.getElementById('msg').style.display = 'block';
+      document.getElementById('msg').innerHTML = 'GAME OVER<br/><small>Tap RESTART</small>';
+    }
+
+    let lastTime = 0;
+    function step(t){
+      requestAnimationFrame(step);
+      const dt = Math.min(50, t - lastTime);
+      lastTime = t;
+      if (!paused && current){
+        dropTimer += dt;
+        if (dropTimer >= dropInterval || hardDropping){
+          dropTimer = 0;
+          if (!move(current, 0, -1)){
+            // Lock piece
+            merge(field, current);
+            clearLines();
+            // New piece
+            current = spawnPiece();
+            if (collide(field, current, current.x, current.y)){
+              gameOver();
+            }
+            hardDropping = false;
+          }
+        }
+      }
+      // Neon animation
+      frame.rotation.y = Math.sin(t*0.0003)*0.03;
+      // Render
+      composer.render();
+    }
+
+    window.addEventListener('resize', ()=>{
+      renderer.setSize(innerWidth, innerHeight);
+      camera.aspect = innerWidth/innerHeight;
+      camera.updateProjectionMatrix();
+      composer.setSize(innerWidth, innerHeight);
+    });
+
+    resetGame();
+    requestAnimationFrame(step);
+  })();
+  </script>
+</body>
+</html>
