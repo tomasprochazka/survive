@@ -54,6 +54,81 @@
             height: 100%;
             padding-bottom: 70px;
         }
+        
+        .widgets-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            justify-content: center;
+        }
+        
+        .widget {
+            width: 80px;
+            height: 80px;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 12px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .widget-label {
+            position: absolute;
+            top: 2px;
+            font-size: 8px;
+            opacity: 0.7;
+        }
+        
+        .compass-needle {
+            width: 2px;
+            height: 30px;
+            background: #ff0000;
+            transform-origin: bottom center;
+            position: absolute;
+        }
+        
+        .compass-circle {
+            width: 60px;
+            height: 60px;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            position: relative;
+        }
+        
+        .accel-dot {
+            width: 8px;
+            height: 8px;
+            background: #00ff00;
+            border-radius: 50%;
+            position: absolute;
+            transform: translate(-50%, -50%);
+        }
+        
+        .accel-area {
+            width: 60px;
+            height: 60px;
+            border: 1px solid #fff;
+            position: relative;
+        }
+        
+        .speed-history-chart {
+            width: 70px;
+            height: 50px;
+            position: relative;
+        }
+        
+        .history-bar {
+            position: absolute;
+            bottom: 0;
+            width: 2px;
+            background: #00ff00;
+            transition: height 0.3s ease;
+        }
 
         .mode-analog {
             display: none;
@@ -270,6 +345,36 @@
         
         <!-- Digital Mode -->
         <div class="mode-digital" id="digitalMode">
+            <div class="widgets-container" id="widgetsContainer">
+                <!-- Compass Widget -->
+                <div class="widget" id="compassWidget">
+                    <div class="widget-label">N</div>
+                    <div class="compass-circle">
+                        <div class="compass-needle" id="compassNeedle"></div>
+                    </div>
+                </div>
+                
+                <!-- Accelerometer Widget -->
+                <div class="widget" id="accelWidget">
+                    <div class="widget-label">G</div>
+                    <div class="accel-area">
+                        <div class="accel-dot" id="accelDot"></div>
+                    </div>
+                </div>
+                
+                <!-- Speed History Widget -->
+                <div class="widget" id="speedHistoryWidget">
+                    <div class="widget-label">5min</div>
+                    <div class="speed-history-chart" id="speedHistoryChart"></div>
+                </div>
+                
+                <!-- Altitude Widget -->
+                <div class="widget" id="altitudeWidget">
+                    <div class="widget-label">ALT</div>
+                    <div id="altitudeValue">--m</div>
+                </div>
+            </div>
+            
             <div class="speed-display" id="speedDisplay">--</div>
             <div class="speed-unit" id="speedUnit">km/h</div>
         </div>
@@ -327,6 +432,15 @@
                 this.touches = [];
                 this.timetable = [];
                 this.nextStopElement = null;
+                this.widgets = {
+                    compass: null,
+                    accelerometer: null,
+                    speedHistory: [],
+                    altitude: null
+                };
+                this.deviceOrientation = 0;
+                this.acceleration = { x: 0, y: 0, z: 0 };
+                this.currentAltitude = null;
                 
                 this.parseTimetable();
                 
@@ -336,6 +450,7 @@
                 this.initGPS();
                 this.setupControls();
                 this.setupZoomControls();
+                this.initializeWidgets();
                 this.startHistoryUpdates();
                 this.startNextStopUpdates();
             }
@@ -380,6 +495,12 @@
                 // Keep only last 2 minutes of data
                 if (this.locationHistory.length > this.maxLocationHistory) {
                     this.locationHistory.shift();
+                }
+                
+                // Update altitude if available
+                if (coords.altitude !== null) {
+                    this.currentAltitude = Math.round(coords.altitude);
+                    this.updateAltitudeWidget();
                 }
                 
                 this.updateTrack();
@@ -946,6 +1067,140 @@ Praha hl.n.,22:47`;
                 setInterval(() => {
                     this.updateNextStopDisplay();
                 }, 30000);
+            }
+            
+            initializeWidgets() {
+                // Initialize speed history chart
+                this.initSpeedHistoryWidget();
+                
+                // Request device orientation permission and start compass
+                this.initCompassWidget();
+                
+                // Request accelerometer permission and start accelerometer
+                this.initAccelerometerWidget();
+                
+                // Start widget updates
+                setInterval(() => {
+                    this.updateSpeedHistoryWidget();
+                }, 5000); // Update every 5 seconds
+            }
+            
+            initSpeedHistoryWidget() {
+                const chart = document.getElementById('speedHistoryChart');
+                // Create 30 bars for 5 minutes (one every 10 seconds)
+                for (let i = 0; i < 30; i++) {
+                    const bar = document.createElement('div');
+                    bar.className = 'history-bar';
+                    bar.style.left = (i * 2.3) + 'px';
+                    bar.style.height = '1px';
+                    chart.appendChild(bar);
+                }
+            }
+            
+            initCompassWidget() {
+                if ('DeviceOrientationEvent' in window) {
+                    // Request permission on iOS
+                    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                        DeviceOrientationEvent.requestPermission()
+                            .then(permissionState => {
+                                if (permissionState === 'granted') {
+                                    this.startCompass();
+                                }
+                            })
+                            .catch(console.error);
+                    } else {
+                        this.startCompass();
+                    }
+                }
+            }
+            
+            startCompass() {
+                window.addEventListener('deviceorientation', (event) => {
+                    this.deviceOrientation = event.alpha || 0;
+                    this.updateCompassWidget();
+                });
+            }
+            
+            updateCompassWidget() {
+                const needle = document.getElementById('compassNeedle');
+                if (needle) {
+                    needle.style.transform = `rotate(${this.deviceOrientation}deg)`;
+                }
+            }
+            
+            initAccelerometerWidget() {
+                if ('DeviceMotionEvent' in window) {
+                    // Request permission on iOS
+                    if (typeof DeviceMotionEvent.requestPermission === 'function') {
+                        DeviceMotionEvent.requestPermission()
+                            .then(permissionState => {
+                                if (permissionState === 'granted') {
+                                    this.startAccelerometer();
+                                }
+                            })
+                            .catch(console.error);
+                    } else {
+                        this.startAccelerometer();
+                    }
+                }
+            }
+            
+            startAccelerometer() {
+                window.addEventListener('devicemotion', (event) => {
+                    if (event.acceleration) {
+                        this.acceleration = {
+                            x: event.acceleration.x || 0,
+                            y: event.acceleration.y || 0,
+                            z: event.acceleration.z || 0
+                        };
+                        this.updateAccelerometerWidget();
+                    }
+                });
+            }
+            
+            updateAccelerometerWidget() {
+                const dot = document.getElementById('accelDot');
+                if (dot) {
+                    // Scale acceleration to fit within the widget (max 2G)
+                    const maxG = 2;
+                    const x = Math.max(-maxG, Math.min(maxG, this.acceleration.x));
+                    const y = Math.max(-maxG, Math.min(maxG, this.acceleration.y));
+                    
+                    // Convert to pixels (30px = 1G)
+                    const pixelX = 30 + (x / maxG) * 25;
+                    const pixelY = 30 + (y / maxG) * 25;
+                    
+                    dot.style.left = pixelX + 'px';
+                    dot.style.top = pixelY + 'px';
+                }
+            }
+            
+            updateSpeedHistoryWidget() {
+                // Add current speed to history
+                this.widgets.speedHistory.push(this.currentSpeed || 0);
+                
+                // Keep only last 30 values (5 minutes)
+                if (this.widgets.speedHistory.length > 30) {
+                    this.widgets.speedHistory.shift();
+                }
+                
+                // Update chart bars
+                const bars = document.querySelectorAll('#speedHistoryChart .history-bar');
+                const maxSpeed = Math.max(...this.widgets.speedHistory, 50); // Minimum scale of 50
+                
+                this.widgets.speedHistory.forEach((speed, index) => {
+                    if (bars[index]) {
+                        const height = (speed / maxSpeed) * 45; // Max height 45px
+                        bars[index].style.height = height + 'px';
+                    }
+                });
+            }
+            
+            updateAltitudeWidget() {
+                const altElement = document.getElementById('altitudeValue');
+                if (altElement && this.currentAltitude !== null) {
+                    altElement.textContent = this.currentAltitude + 'm';
+                }
             }
 
             destroy() {
