@@ -16,6 +16,17 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            position: relative;
+        }
+        
+        .track-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: -1;
+            pointer-events: none;
         }
 
         .speed-container {
@@ -254,8 +265,13 @@
                 this.speedHistory = [];
                 this.maxHistoryLength = 60; // 60 seconds of history
                 this.currentSpeed = 0;
+                this.locationHistory = [];
+                this.maxLocationHistory = 120; // 2 minutes of location data
+                this.trackCanvas = null;
+                this.trackCtx = null;
                 
                 this.createModeElements();
+                this.createTrackCanvas();
                 this.initGPS();
                 this.setupControls();
                 this.startHistoryUpdates();
@@ -289,6 +305,21 @@
                 
                 
                 const speed = coords.speed; // Speed in m/s
+                
+                // Store location data for track visualization
+                this.locationHistory.push({
+                    lat: coords.latitude,
+                    lng: coords.longitude,
+                    timestamp: Date.now(),
+                    speed: speed || 0
+                });
+                
+                // Keep only last 2 minutes of data
+                if (this.locationHistory.length > this.maxLocationHistory) {
+                    this.locationHistory.shift();
+                }
+                
+                this.updateTrack();
                 
                 if (speed === null || speed === undefined) {
                     this.currentSpeed = 0;
@@ -337,6 +368,97 @@
             showError(message) {
                 this.speedContainer.innerHTML = `<div class="error">${message}</div>`;
                 this.status.textContent = message;
+            }
+
+            createTrackCanvas() {
+                this.trackCanvas = document.createElement('canvas');
+                this.trackCanvas.className = 'track-canvas';
+                this.trackCanvas.width = window.innerWidth;
+                this.trackCanvas.height = window.innerHeight;
+                this.trackCtx = this.trackCanvas.getContext('2d');
+                document.body.appendChild(this.trackCanvas);
+            }
+            
+            updateTrack() {
+                if (!this.trackCtx || this.locationHistory.length < 2) return;
+                
+                // Clear canvas
+                this.trackCtx.clearRect(0, 0, this.trackCanvas.width, this.trackCanvas.height);
+                
+                // Find bounds of all locations
+                const lats = this.locationHistory.map(p => p.lat);
+                const lngs = this.locationHistory.map(p => p.lng);
+                const minLat = Math.min(...lats);
+                const maxLat = Math.max(...lats);
+                const minLng = Math.min(...lngs);
+                const maxLng = Math.max(...lngs);
+                
+                // Add padding and ensure minimum range
+                const latRange = Math.max(maxLat - minLat, 0.001); // Minimum 100m range
+                const lngRange = Math.max(maxLng - minLng, 0.001);
+                const padding = 0.1; // 10% padding
+                
+                const scaledMinLat = minLat - latRange * padding;
+                const scaledMaxLat = maxLat + latRange * padding;
+                const scaledMinLng = minLng - lngRange * padding;
+                const scaledMaxLng = maxLng + lngRange * padding;
+                
+                // Map coordinates to screen space
+                const mapToScreen = (lat, lng) => {
+                    const x = ((lng - scaledMinLng) / (scaledMaxLng - scaledMinLng)) * this.trackCanvas.width;
+                    const y = this.trackCanvas.height - ((lat - scaledMinLat) / (scaledMaxLat - scaledMinLat)) * this.trackCanvas.height;
+                    return { x, y };
+                };
+                
+                // Draw track line
+                this.trackCtx.strokeStyle = '#00ff0033';
+                this.trackCtx.lineWidth = 3;
+                this.trackCtx.lineCap = 'round';
+                this.trackCtx.lineJoin = 'round';
+                this.trackCtx.beginPath();
+                
+                const firstPoint = mapToScreen(this.locationHistory[0].lat, this.locationHistory[0].lng);
+                this.trackCtx.moveTo(firstPoint.x, firstPoint.y);
+                
+                // Draw line with speed-based coloring
+                for (let i = 1; i < this.locationHistory.length; i++) {
+                    const point = mapToScreen(this.locationHistory[i].lat, this.locationHistory[i].lng);
+                    this.trackCtx.lineTo(point.x, point.y);
+                }
+                
+                this.trackCtx.stroke();
+                
+                // Draw speed-colored dots
+                for (let i = 0; i < this.locationHistory.length; i += 5) { // Every 5th point
+                    const location = this.locationHistory[i];
+                    const point = mapToScreen(location.lat, location.lng);
+                    const speed = location.speed * 3.6; // Convert to km/h
+                    
+                    // Color based on speed
+                    let color;
+                    if (speed < 10) color = '#00ff00';      // Green for slow
+                    else if (speed < 50) color = '#ffff00';  // Yellow for medium
+                    else color = '#ff0000';                  // Red for fast
+                    
+                    this.trackCtx.fillStyle = color + '88'; // Semi-transparent
+                    this.trackCtx.beginPath();
+                    this.trackCtx.arc(point.x, point.y, 3, 0, Math.PI * 2);
+                    this.trackCtx.fill();
+                }
+                
+                // Draw current position
+                if (this.locationHistory.length > 0) {
+                    const currentPos = this.locationHistory[this.locationHistory.length - 1];
+                    const currentPoint = mapToScreen(currentPos.lat, currentPos.lng);
+                    
+                    this.trackCtx.fillStyle = '#00ff00';
+                    this.trackCtx.strokeStyle = '#ffffff';
+                    this.trackCtx.lineWidth = 2;
+                    this.trackCtx.beginPath();
+                    this.trackCtx.arc(currentPoint.x, currentPoint.y, 8, 0, Math.PI * 2);
+                    this.trackCtx.fill();
+                    this.trackCtx.stroke();
+                }
             }
 
             createModeElements() {
