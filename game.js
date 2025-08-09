@@ -4,7 +4,7 @@ class Game {
         const defaultConfig = {
             alien: {
                 size: 180,  // Alien diameter (was radius * 2 = 30 * 2 = 60)
-                rotationSpeed: 0.01
+                rotationSpeed: 0.05
             },
             hero: {
                 size: 88,  // Hero diameter
@@ -304,8 +304,9 @@ class Game {
             case 'aiming':
                 this.alien.aimingTime += deltaTime;
                 
-                // Show target indicators for 1 second
-                if (this.alien.aimingTime >= 1000) {
+                // Show target indicators for random time between 500ms and 1000ms
+                const randomAimTime = Math.random() * 500 + 500; // 500ms to 1000ms
+                if (this.alien.aimingTime >= randomAimTime) {
                     this.alien.state = 'firing';
                     this.alien.showTargetIndicators = false;
                     
