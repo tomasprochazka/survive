@@ -90,6 +90,9 @@
             background: #ff0000;
             transform-origin: bottom center;
             position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -100%) rotate(0deg);
         }
         
         .compass-circle {
@@ -1124,7 +1127,7 @@ Praha hl.n.,22:47`;
             updateCompassWidget() {
                 const needle = document.getElementById('compassNeedle');
                 if (needle) {
-                    needle.style.transform = `rotate(${this.deviceOrientation}deg)`;
+                    needle.style.transform = `translate(-50%, -100%) rotate(${this.deviceOrientation}deg)`;
                 }
             }
             
