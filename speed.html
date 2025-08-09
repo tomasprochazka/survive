@@ -446,6 +446,11 @@
                 this.deviceOrientation = 0;
                 this.acceleration = { x: 0, y: 0, z: 0 };
                 this.currentAltitude = null;
+                this.useGPSCompass = false;
+                this.gpsCompassAngle = 0;
+                this.lastGPSPosition = null;
+                this.hasDeviceOrientation = false;
+                this.hasDeviceMotion = false;
                 
                 this.parseTimetable();
                 
@@ -506,6 +511,11 @@
                 if (coords.altitude !== null) {
                     this.currentAltitude = Math.round(coords.altitude);
                     this.updateAltitudeWidget();
+                }
+                
+                // Calculate GPS compass if using GPS for compass
+                if (this.useGPSCompass || !this.hasDeviceOrientation) {
+                    this.calculateGPSCompass(coords.latitude, coords.longitude);
                 }
                 
                 this.updateTrack();
@@ -1103,87 +1113,168 @@ Praha hl.n.,22:47`;
             }
             
             initCompassWidget() {
+                console.log('Initializing compass widget...');
+                
                 if ('DeviceOrientationEvent' in window) {
+                    console.log('DeviceOrientationEvent available');
+                    
                     // Request permission on iOS
                     if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                        console.log('Requesting iOS orientation permission...');
                         DeviceOrientationEvent.requestPermission()
                             .then(permissionState => {
+                                console.log('iOS permission result:', permissionState);
                                 if (permissionState === 'granted') {
                                     this.startCompass();
+                                } else {
+                                    console.log('iOS permission denied, using GPS compass');
+                                    this.useGPSCompass = true;
                                 }
                             })
-                            .catch(console.error);
+                            .catch(error => {
+                                console.error('iOS permission error:', error);
+                                this.useGPSCompass = true;
+                            });
                     } else {
+                        console.log('No permission needed, starting compass');
                         this.startCompass();
                     }
+                } else {
+                    console.log('DeviceOrientationEvent not available, using GPS compass');
+                    this.useGPSCompass = true;
                 }
             }
             
             startCompass() {
-                window.addEventListener('deviceorientationabsolute', (event) => {
-                    // Use absolute orientation if available (Android)
-                    this.deviceOrientation = event.alpha || 0;
-                    this.updateCompassWidget();
-                });
+                console.log('Starting compass listeners...');
                 
-                window.addEventListener('deviceorientation', (event) => {
-                    // Fallback for iOS and other devices
+                window.addEventListener('deviceorientationabsolute', (event) => {
+                    console.log('DeviceOrientationAbsolute event:', event.alpha);
                     if (event.alpha !== null) {
-                        this.deviceOrientation = event.alpha || 0;
+                        this.hasDeviceOrientation = true;
+                        this.deviceOrientation = event.alpha;
                         this.updateCompassWidget();
                     }
                 });
                 
-                // Add some test data for debugging
-                let testAngle = 0;
-                setInterval(() => {
-                    if (this.deviceOrientation === 0) {
-                        // If no real compass data, show test rotation
-                        testAngle += 10;
-                        if (testAngle >= 360) testAngle = 0;
-                        const needle = document.getElementById('compassNeedle');
-                        if (needle) {
-                            needle.style.transform = `translate(-50%, -100%) rotate(${testAngle}deg)`;
-                        }
+                window.addEventListener('deviceorientation', (event) => {
+                    console.log('DeviceOrientation event:', event.alpha);
+                    if (event.alpha !== null) {
+                        this.hasDeviceOrientation = true;
+                        this.deviceOrientation = event.alpha;
+                        this.updateCompassWidget();
                     }
-                }, 1000);
+                });
+                
+                // Check after 3 seconds if we have device orientation
+                setTimeout(() => {
+                    if (!this.hasDeviceOrientation) {
+                        console.log('No device orientation detected, switching to GPS compass');
+                        this.useGPSCompass = true;
+                    }
+                }, 3000);
+            }
+            
+            calculateGPSCompass(lat, lng) {
+                if (this.lastGPSPosition) {
+                    // Calculate bearing between last position and current position
+                    const lat1 = this.lastGPSPosition.lat * Math.PI / 180;
+                    const lat2 = lat * Math.PI / 180;
+                    const deltaLng = (lng - this.lastGPSPosition.lng) * Math.PI / 180;
+                    
+                    const y = Math.sin(deltaLng) * Math.cos(lat2);
+                    const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(deltaLng);
+                    
+                    let bearing = Math.atan2(y, x) * 180 / Math.PI;
+                    bearing = (bearing + 360) % 360; // Normalize to 0-360
+                    
+                    // Only update if we've moved significantly (more than 5 meters)
+                    const distance = this.calculateDistance(this.lastGPSPosition.lat, this.lastGPSPosition.lng, lat, lng);
+                    if (distance > 5) {
+                        this.gpsCompassAngle = bearing;
+                        console.log('GPS Compass bearing:', bearing);
+                        this.updateCompassWidget();
+                    }
+                }
+                
+                this.lastGPSPosition = { lat, lng };
+            }
+            
+            calculateDistance(lat1, lng1, lat2, lng2) {
+                const R = 6371e3; // Earth's radius in meters
+                const φ1 = lat1 * Math.PI/180;
+                const φ2 = lat2 * Math.PI/180;
+                const Δφ = (lat2-lat1) * Math.PI/180;
+                const Δλ = (lng2-lng1) * Math.PI/180;
+                
+                const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                        Math.cos(φ1) * Math.cos(φ2) *
+                        Math.sin(Δλ/2) * Math.sin(Δλ/2);
+                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                
+                return R * c;
             }
             
             updateCompassWidget() {
                 const needle = document.getElementById('compassNeedle');
                 if (needle) {
-                    needle.style.transform = `translate(-50%, -100%) rotate(${this.deviceOrientation}deg)`;
+                    const angle = this.useGPSCompass || !this.hasDeviceOrientation ? 
+                        this.gpsCompassAngle : this.deviceOrientation;
+                    needle.style.transform = `translate(-50%, -100%) rotate(${angle}deg)`;
                 }
             }
             
             initAccelerometerWidget() {
+                console.log('Initializing accelerometer widget...');
+                
                 if ('DeviceMotionEvent' in window) {
+                    console.log('DeviceMotionEvent available');
+                    
                     // Request permission on iOS
                     if (typeof DeviceMotionEvent.requestPermission === 'function') {
+                        console.log('Requesting iOS motion permission...');
                         DeviceMotionEvent.requestPermission()
                             .then(permissionState => {
+                                console.log('iOS motion permission result:', permissionState);
                                 if (permissionState === 'granted') {
                                     this.startAccelerometer();
+                                } else {
+                                    console.log('iOS motion permission denied, using test data');
+                                    this.startTestAccelerometer();
                                 }
                             })
-                            .catch(console.error);
+                            .catch(error => {
+                                console.error('iOS motion permission error:', error);
+                                this.startTestAccelerometer();
+                            });
                     } else {
+                        console.log('No permission needed, starting accelerometer');
                         this.startAccelerometer();
                     }
+                } else {
+                    console.log('DeviceMotionEvent not available, using test data');
+                    this.startTestAccelerometer();
                 }
             }
             
             startAccelerometer() {
+                console.log('Starting accelerometer listeners...');
+                
                 window.addEventListener('devicemotion', (event) => {
-                    if (event.acceleration) {
+                    console.log('DeviceMotion event:', event.acceleration, event.accelerationIncludingGravity);
+                    
+                    if (event.acceleration && (event.acceleration.x !== null || event.acceleration.y !== null)) {
+                        console.log('Using acceleration data');
+                        this.hasDeviceMotion = true;
                         this.acceleration = {
                             x: event.acceleration.x || 0,
                             y: event.acceleration.y || 0,
                             z: event.acceleration.z || 0
                         };
                         this.updateAccelerometerWidget();
-                    } else if (event.accelerationIncludingGravity) {
-                        // Fallback to gravity-included acceleration
+                    } else if (event.accelerationIncludingGravity && (event.accelerationIncludingGravity.x !== null || event.accelerationIncludingGravity.y !== null)) {
+                        console.log('Using accelerationIncludingGravity data');
+                        this.hasDeviceMotion = true;
                         this.acceleration = {
                             x: event.accelerationIncludingGravity.x || 0,
                             y: event.accelerationIncludingGravity.y || 0,
@@ -1193,23 +1284,31 @@ Praha hl.n.,22:47`;
                     }
                 });
                 
-                // Add test animation if no real accelerometer data
+                // Check after 3 seconds if we have device motion
+                setTimeout(() => {
+                    if (!this.hasDeviceMotion) {
+                        console.log('No device motion detected, starting test accelerometer');
+                        this.startTestAccelerometer();
+                    }
+                }, 3000);
+            }
+            
+            startTestAccelerometer() {
+                console.log('Starting test accelerometer animation');
                 let testX = 0, testY = 0;
                 let direction = 1;
+                
                 setInterval(() => {
-                    if (Math.abs(this.acceleration.x) < 0.1 && Math.abs(this.acceleration.y) < 0.1) {
-                        // If no real accelerometer data, show test movement
-                        testX += direction * 0.3;
-                        testY += direction * 0.2;
-                        if (Math.abs(testX) > 1.5) direction *= -1;
-                        
-                        const dot = document.getElementById('accelDot');
-                        if (dot) {
-                            const pixelX = 30 + testX * 15;
-                            const pixelY = 30 + testY * 15;
-                            dot.style.left = pixelX + 'px';
-                            dot.style.top = pixelY + 'px';
-                        }
+                    testX += direction * 0.3;
+                    testY += direction * 0.2;
+                    if (Math.abs(testX) > 1.5) direction *= -1;
+                    
+                    const dot = document.getElementById('accelDot');
+                    if (dot) {
+                        const pixelX = 30 + testX * 15;
+                        const pixelY = 30 + testY * 15;
+                        dot.style.left = pixelX + 'px';
+                        dot.style.top = pixelY + 'px';
                     }
                 }, 200);
             }
