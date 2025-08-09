@@ -22,6 +22,135 @@
             text-align: center;
             color: #00ff00;
             text-shadow: 0 0 20px #00ff00;
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+
+        .mode-digital {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+        }
+
+        .mode-analog {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+        }
+
+        .mode-chart {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+        }
+
+        .speedometer {
+            position: relative;
+            width: 300px;
+            height: 300px;
+            border: 4px solid #00ff00;
+            border-radius: 50%;
+            background: radial-gradient(circle, #001100, #000);
+            box-shadow: 0 0 30px #00ff00;
+        }
+
+        .speedometer-needle {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 3px;
+            height: 120px;
+            background: #ff0000;
+            transform-origin: bottom center;
+            transform: translate(-50%, -100%) rotate(-90deg);
+            transition: transform 0.3s ease;
+            box-shadow: 0 0 10px #ff0000;
+        }
+
+        .speedometer-center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 20px;
+            height: 20px;
+            background: #00ff00;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 10px #00ff00;
+        }
+
+        .speedometer-labels {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            color: #00ff00;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .speed-label {
+            position: absolute;
+            transform: translate(-50%, -50%);
+        }
+
+        .analog-speed-value {
+            position: absolute;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 2rem;
+            color: #00ff00;
+            text-shadow: 0 0 10px #00ff00;
+        }
+
+        .chart-container {
+            width: 90%;
+            max-width: 800px;
+            height: 300px;
+            border: 2px solid #00ff00;
+            background: rgba(0, 17, 0, 0.3);
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        .chart-bars {
+            display: flex;
+            align-items: end;
+            height: 100%;
+            padding: 10px;
+            gap: 1px;
+        }
+
+        .chart-bar {
+            flex: 1;
+            background: #00ff00;
+            min-height: 1px;
+            transition: height 0.3s ease;
+            box-shadow: 0 0 3px #00ff00;
+        }
+
+        .chart-info {
+            color: #00ff00;
+            font-size: 1.5rem;
+            text-align: center;
+        }
+
+        .mode-indicator {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: #fff;
+            font-size: 14px;
+            opacity: 0.7;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 5px 10px;
+            border-radius: 5px;
         }
 
         .speed-display {
@@ -42,8 +171,23 @@
             top: 20px;
             left: 20px;
             color: #fff;
-            font-size: 14px;
-            opacity: 0.7;
+            font-size: 12px;
+            opacity: 0.9;
+            max-width: 300px;
+            line-height: 1.3;
+        }
+
+        .debug-info {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            color: #888;
+            font-size: 10px;
+            font-family: monospace;
+            line-height: 1.2;
+            max-height: 200px;
+            overflow-y: auto;
         }
 
         .error {
@@ -75,9 +219,37 @@
     <div class="status" id="status">Requesting GPS...</div>
     
     <div class="speed-container" id="speedContainer">
-        <div class="speed-display" id="speedDisplay">--</div>
-        <div class="speed-unit" id="speedUnit">km/h</div>
+        <div class="mode-indicator" id="modeIndicator">Digital</div>
+        
+        <!-- Digital Mode -->
+        <div class="mode-digital" id="digitalMode">
+            <div class="speed-display" id="speedDisplay">--</div>
+            <div class="speed-unit" id="speedUnit">km/h</div>
+        </div>
+        
+        <!-- Analog Mode -->
+        <div class="mode-analog" id="analogMode">
+            <div class="speedometer">
+                <div class="speedometer-labels" id="speedometerLabels"></div>
+                <div class="speedometer-needle" id="speedometerNeedle"></div>
+                <div class="speedometer-center"></div>
+            </div>
+            <div class="analog-speed-value" id="analogSpeedValue">-- km/h</div>
+        </div>
+        
+        <!-- Chart Mode -->
+        <div class="mode-chart" id="chartMode">
+            <div class="chart-container">
+                <div class="chart-bars" id="chartBars"></div>
+            </div>
+            <div class="chart-info">
+                <div id="chartSpeedValue">-- km/h</div>
+                <div style="font-size: 1rem; opacity: 0.7;">Speed History (60s)</div>
+            </div>
+        </div>
     </div>
+
+    <div class="debug-info" id="debugInfo">Debug info will appear here...</div>
 
     <script>
         class SpeedTracker {
@@ -86,12 +258,21 @@
                 this.speedUnit = document.getElementById('speedUnit');
                 this.status = document.getElementById('status');
                 this.speedContainer = document.getElementById('speedContainer');
+                this.debugInfo = document.getElementById('debugInfo');
                 
                 this.watchId = null;
                 this.isKmh = true; // true for km/h, false for mph
+                this.positionCount = 0;
+                this.currentMode = 0; // 0=digital, 1=analog, 2=chart
+                this.modes = ['Digital', 'Analog', 'Chart'];
+                this.speedHistory = [];
+                this.maxHistoryLength = 60; // 60 seconds of history
+                this.currentSpeed = 0;
                 
+                this.createModeElements();
                 this.initGPS();
                 this.setupControls();
+                this.startHistoryUpdates();
             }
 
             initGPS() {
@@ -116,11 +297,29 @@
             }
 
             handlePosition(position) {
-                const speed = position.coords.speed; // Speed in m/s
+                this.positionCount++;
+                const coords = position.coords;
+                const timestamp = new Date(position.timestamp);
+                
+                // Debug info display
+                let debugText = `Position Update #${this.positionCount}\n`;
+                debugText += `Timestamp: ${timestamp.toLocaleTimeString()}\n`;
+                debugText += `Latitude: ${coords.latitude}\n`;
+                debugText += `Longitude: ${coords.longitude}\n`;
+                debugText += `Altitude: ${coords.altitude !== null ? coords.altitude + 'm' : 'null'}\n`;
+                debugText += `Speed: ${coords.speed !== null ? coords.speed + ' m/s' : 'null'}\n`;
+                debugText += `Heading: ${coords.heading !== null ? coords.heading + '°' : 'null'}\n`;
+                debugText += `Accuracy: ${coords.accuracy}m\n`;
+                debugText += `Altitude Accuracy: ${coords.altitudeAccuracy !== null ? coords.altitudeAccuracy + 'm' : 'null'}\n`;
+                
+                this.debugInfo.textContent = debugText;
+                
+                const speed = coords.speed; // Speed in m/s
                 
                 if (speed === null || speed === undefined) {
-                    this.speedDisplay.textContent = '--';
-                    this.status.textContent = 'GPS active - No speed data';
+                    this.currentSpeed = 0;
+                    this.updateSpeedDisplay(0);
+                    this.status.textContent = `GPS active - No speed data\nUpdate #${this.positionCount} at ${timestamp.toLocaleTimeString()}\nAccuracy: ±${Math.round(coords.accuracy)}m`;
                     return;
                 }
 
@@ -134,11 +333,12 @@
 
                 // Round to 1 decimal place
                 displaySpeed = Math.round(displaySpeed * 10) / 10;
-
-                this.speedDisplay.textContent = displaySpeed;
+                this.currentSpeed = displaySpeed;
                 
-                const accuracy = Math.round(position.coords.accuracy);
-                this.status.textContent = `GPS active - Accuracy: ±${accuracy}m`;
+                this.updateSpeedDisplay(displaySpeed);
+                
+                const accuracy = Math.round(coords.accuracy);
+                this.status.textContent = `GPS active - Speed: ${displaySpeed} ${this.isKmh ? 'km/h' : 'mph'}\nUpdate #${this.positionCount} at ${timestamp.toLocaleTimeString()}\nAccuracy: ±${accuracy}m`;
             }
 
             handleError(error) {
@@ -165,11 +365,116 @@
                 this.status.textContent = message;
             }
 
+            createModeElements() {
+                // Create speedometer labels
+                const labelsContainer = document.getElementById('speedometerLabels');
+                for (let i = 0; i <= 15; i++) {
+                    const angle = -90 + (i * 12); // -90 to 90 degrees (180 degree arc)
+                    const speed = i * 10; // 0 to 150 km/h
+                    const radian = (angle * Math.PI) / 180;
+                    const x = 50 + 40 * Math.cos(radian);
+                    const y = 50 + 40 * Math.sin(radian);
+                    
+                    const label = document.createElement('div');
+                    label.className = 'speed-label';
+                    label.textContent = speed;
+                    label.style.left = x + '%';
+                    label.style.top = y + '%';
+                    labelsContainer.appendChild(label);
+                }
+                
+                // Initialize chart bars
+                const chartBars = document.getElementById('chartBars');
+                for (let i = 0; i < this.maxHistoryLength; i++) {
+                    const bar = document.createElement('div');
+                    bar.className = 'chart-bar';
+                    bar.style.height = '1px';
+                    chartBars.appendChild(bar);
+                }
+            }
+            
+            updateSpeedDisplay(speed) {
+                const unit = this.isKmh ? 'km/h' : 'mph';
+                
+                // Digital mode
+                this.speedDisplay.textContent = speed || '--';
+                this.speedUnit.textContent = unit;
+                
+                // Analog mode
+                const analogValue = document.getElementById('analogSpeedValue');
+                analogValue.textContent = speed ? `${speed} ${unit}` : `-- ${unit}`;
+                
+                // Update speedometer needle
+                const needle = document.getElementById('speedometerNeedle');
+                const maxSpeed = 150; // km/h
+                const speedToShow = this.isKmh ? speed : speed * 1.609; // Convert mph to km/h for needle position
+                const angle = -90 + (Math.min(speedToShow, maxSpeed) / maxSpeed) * 180;
+                needle.style.transform = `translate(-50%, -100%) rotate(${angle}deg)`;
+                
+                // Chart mode
+                const chartValue = document.getElementById('chartSpeedValue');
+                chartValue.textContent = speed ? `${speed} ${unit}` : `-- ${unit}`;
+            }
+            
+            switchMode() {
+                // Hide current mode
+                const modes = ['digitalMode', 'analogMode', 'chartMode'];
+                modes.forEach(mode => {
+                    const element = document.getElementById(mode);
+                    element.style.display = 'none';
+                });
+                
+                // Cycle to next mode
+                this.currentMode = (this.currentMode + 1) % 3;
+                
+                // Show new mode
+                const newModeElement = document.getElementById(modes[this.currentMode]);
+                newModeElement.style.display = this.currentMode === 1 ? 'flex' : 
+                                              this.currentMode === 2 ? 'flex' : 'flex';
+                
+                // Update mode indicator
+                document.getElementById('modeIndicator').textContent = this.modes[this.currentMode];
+                
+                // Update speed display for current mode
+                this.updateSpeedDisplay(this.currentSpeed);
+            }
+            
+            startHistoryUpdates() {
+                setInterval(() => {
+                    // Add current speed to history
+                    this.speedHistory.push(this.currentSpeed);
+                    
+                    // Keep only last N seconds
+                    if (this.speedHistory.length > this.maxHistoryLength) {
+                        this.speedHistory.shift();
+                    }
+                    
+                    // Update chart bars
+                    this.updateChart();
+                }, 1000);
+            }
+            
+            updateChart() {
+                const bars = document.querySelectorAll('.chart-bar');
+                const maxSpeed = Math.max(...this.speedHistory, 50); // Minimum scale of 50
+                
+                this.speedHistory.forEach((speed, index) => {
+                    if (bars[index]) {
+                        const height = (speed / maxSpeed) * 100;
+                        bars[index].style.height = height + '%';
+                    }
+                });
+                
+                // Clear remaining bars if history is shorter than max
+                for (let i = this.speedHistory.length; i < bars.length; i++) {
+                    bars[i].style.height = '1px';
+                }
+            }
+
             setupControls() {
-                // Tap to switch between km/h and mph
+                // Tap to cycle between modes
                 this.speedContainer.addEventListener('click', () => {
-                    this.isKmh = !this.isKmh;
-                    this.speedUnit.textContent = this.isKmh ? 'km/h' : 'mph';
+                    this.switchMode();
                 });
 
                 // Prevent screen from sleeping
