@@ -12,7 +12,9 @@ class Game {
             },
             fireball: {
                 size: 16,  // Fireball diameter
-                speed: 3   // Fireball movement speed (pixels per frame)
+                speed: 3,   // Fireball movement speed (pixels per frame)
+                minCount: 3,  // Minimum number of fireballs per wave
+                maxCount: 7   // Maximum number of fireballs per wave
             }
         };
         
@@ -287,9 +289,10 @@ class Game {
                     this.alien.aimingTime = 0;
                     
                     // Calculate target angles for fireballs
+                    const fireballCount = Math.floor(Math.random() * (this.config.fireball.maxCount - this.config.fireball.minCount + 1)) + this.config.fireball.minCount;
                     this.alien.targetAngles = [];
-                    for (let i = 0; i < 3; i++) {
-                        this.alien.targetAngles.push((Math.PI * 2 / 3) * i + this.alien.rotation);
+                    for (let i = 0; i < fireballCount; i++) {
+                        this.alien.targetAngles.push((Math.PI * 2 / fireballCount) * i + this.alien.rotation);
                     }
                     this.alien.showTargetIndicators = true;
                 } else {
@@ -785,6 +788,10 @@ function setupDebugControls() {
     document.getElementById('fireballSizeValue').textContent = game.config.fireball.size;
     document.getElementById('fireballSpeed').value = game.config.fireball.speed;
     document.getElementById('fireballSpeedValue').textContent = game.config.fireball.speed;
+    document.getElementById('fireballMinCount').value = game.config.fireball.minCount;
+    document.getElementById('fireballMinCountValue').textContent = game.config.fireball.minCount;
+    document.getElementById('fireballMaxCount').value = game.config.fireball.maxCount;
+    document.getElementById('fireballMaxCountValue').textContent = game.config.fireball.maxCount;
 
     // Alien Size
     const alienSize = document.getElementById('alienSize');
@@ -847,6 +854,36 @@ function setupDebugControls() {
         game.config.fireball.speed = value;
         fireballSpeedValue.textContent = value;
         game.saveConfig();
+    });
+
+    // Fireball Min Count
+    const fireballMinCount = document.getElementById('fireballMinCount');
+    const fireballMinCountValue = document.getElementById('fireballMinCountValue');
+    fireballMinCount.addEventListener('input', (e) => {
+        const value = parseInt(e.target.value);
+        const maxValue = parseInt(document.getElementById('fireballMaxCount').value);
+        if (value <= maxValue) {
+            game.config.fireball.minCount = value;
+            fireballMinCountValue.textContent = value;
+            game.saveConfig();
+        } else {
+            e.target.value = game.config.fireball.minCount;
+        }
+    });
+
+    // Fireball Max Count
+    const fireballMaxCount = document.getElementById('fireballMaxCount');
+    const fireballMaxCountValue = document.getElementById('fireballMaxCountValue');
+    fireballMaxCount.addEventListener('input', (e) => {
+        const value = parseInt(e.target.value);
+        const minValue = parseInt(document.getElementById('fireballMinCount').value);
+        if (value >= minValue) {
+            game.config.fireball.maxCount = value;
+            fireballMaxCountValue.textContent = value;
+            game.saveConfig();
+        } else {
+            e.target.value = game.config.fireball.maxCount;
+        }
     });
 
     // Cheat Mode Toggle
