@@ -70,7 +70,6 @@ class Game {
         };
         
         // Game state
-        this.score = 0;
         this.highScore = this.loadHighScore();
         this.gameRunning = true;
         this.gamePaused = false;
@@ -93,13 +92,29 @@ class Game {
         // Circle path properties - 85% of smaller screen dimension
         this.circleRadius = Math.min(this.width, this.height) * 0.85 / 2;
         
-        // Hero properties
-        this.hero = {
-            angle: 0,
-            radius: 8,
-            speed: this.config.hero.speed, // radians per frame
-            direction: 1 // 1 for clockwise, -1 for counterclockwise
-        };
+        // Player properties
+        this.players = [
+            {
+                id: 1,
+                angle: 0,
+                radius: 8,
+                speed: this.config.hero.speed,
+                direction: 1,
+                color: 'rgba(0, 150, 255, 0.6)', // Blue circle for player 1
+                score: 0,
+                alive: true
+            },
+            {
+                id: 2,
+                angle: Math.PI, // Start on opposite side
+                radius: 8,
+                speed: this.config.hero.speed,
+                direction: 1,
+                color: 'rgba(255, 100, 0, 0.6)', // Orange circle for player 2
+                score: 0,
+                alive: true
+            }
+        ];
         
         // Fireballs array
         this.fireballs = [];
@@ -112,29 +127,24 @@ class Game {
     }
     
     setupInput() {
-        this.canvas.addEventListener('click', () => {
+        // Mouse/touch input for both players
+        this.canvas.addEventListener('click', (e) => {
             if (this.gameRunning) {
-                this.hero.direction *= -1; // Change direction
+                this.handlePlayerInput(e.clientY);
             }
         });
         
         // Touch support for mobile
         this.canvas.addEventListener('touchstart', (e) => {
             e.preventDefault();
-            if (this.gameRunning) {
-                this.hero.direction *= -1;
+            if (this.gameRunning && e.touches.length > 0) {
+                this.handlePlayerInput(e.touches[0].clientY);
             }
         });
         
         // Keyboard controls
         document.addEventListener('keydown', (e) => {
-            if (e.code === 'Space' || e.code === 'Enter') {
-                e.preventDefault(); // Prevent default spacebar behavior
-                
-                if (this.gameRunning && !this.gamePaused) {
-                    this.hero.direction *= -1; // Change direction
-                }
-            } else if (e.code === 'KeyP') {
+            if (e.code === 'KeyP') {
                 e.preventDefault();
                 this.togglePause();
             } else if (e.code === 'KeyC') {
@@ -144,17 +154,40 @@ class Game {
         });
     }
     
+    handlePlayerInput(clickY) {
+        const screenHeight = window.innerHeight;
+        const midPoint = screenHeight / 2;
+        
+        if (clickY <= midPoint) {
+            // Upper half - Player 2 control
+            if (this.players[1].alive) {
+                this.players[1].direction *= -1;
+            }
+        } else {
+            // Lower half - Player 1 control
+            if (this.players[0].alive) {
+                this.players[0].direction *= -1;
+            }
+        }
+    }
+    
     createFireballs() {
         const currentTime = Date.now();
         if (currentTime - this.lastFireballTime > this.fireballCooldown) {
             // Award score for surviving the previous wave (if there was one) - but not in cheat mode
             if (this.lastFireballTime > 0 && !this.waveSurvived && !this.cheatMode) {
-                this.score += 1;
+                // Award score to all alive players
+                this.players.forEach(player => {
+                    if (player.alive) {
+                        player.score += 1;
+                    }
+                });
                 this.waveSurvived = true;
                 
-                // Update high score if current score exceeds it
-                if (this.score > this.highScore) {
-                    this.highScore = this.score;
+                // Update high score if any player's score exceeds it
+                const maxScore = Math.max(...this.players.map(p => p.score));
+                if (maxScore > this.highScore) {
+                    this.highScore = maxScore;
                     this.saveHighScore();
                 }
             }
@@ -197,16 +230,20 @@ class Game {
         }
     }
     
-    updateHero() {
-        // Move hero along the circle
-        this.hero.angle += this.hero.speed * this.hero.direction;
-        
-        // Keep angle within 0-2π range
-        if (this.hero.angle > Math.PI * 2) {
-            this.hero.angle -= Math.PI * 2;
-        } else if (this.hero.angle < 0) {
-            this.hero.angle += Math.PI * 2;
-        }
+    updatePlayers() {
+        this.players.forEach(player => {
+            if (player.alive) {
+                // Move player along the circle
+                player.angle += player.speed * player.direction;
+                
+                // Keep angle within 0-2π range
+                if (player.angle > Math.PI * 2) {
+                    player.angle -= Math.PI * 2;
+                } else if (player.angle < 0) {
+                    player.angle += Math.PI * 2;
+                }
+            }
+        });
     }
     
     updateAlien() {
@@ -218,36 +255,43 @@ class Game {
     }
     
     checkCollisions() {
-        const heroX = this.centerX + Math.cos(this.hero.angle) * this.circleRadius;
-        const heroY = this.centerY + Math.sin(this.hero.angle) * this.circleRadius;
-        
-        for (let i = this.fireballs.length - 1; i >= 0; i--) {
-            const fireball = this.fireballs[i];
-            const dx = heroX - fireball.x;
-            const dy = heroY - fireball.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
+        this.players.forEach(player => {
+            if (!player.alive) return;
             
-            if (distance < this.hero.radius + fireball.radius) {
-                if (this.cheatMode) {
-                    // In cheat mode, show hit indicator instead of game over
-                    this.showHitIndicator = true;
-                    this.hitIndicatorTime = Date.now();
-                } else {
-                    // Normal mode - game over immediately
-                    this.gameOver();
+            const playerX = this.centerX + Math.cos(player.angle) * this.circleRadius;
+            const playerY = this.centerY + Math.sin(player.angle) * this.circleRadius;
+            
+            for (let i = this.fireballs.length - 1; i >= 0; i--) {
+                const fireball = this.fireballs[i];
+                const dx = playerX - fireball.x;
+                const dy = playerY - fireball.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < player.radius + fireball.radius) {
+                    if (this.cheatMode) {
+                        // In cheat mode, show hit indicator instead of game over
+                        this.showHitIndicator = true;
+                        this.hitIndicatorTime = Date.now();
+                    } else {
+                        // Normal mode - player dies
+                        player.alive = false;
+                        // Check if any player is still alive
+                        const alivePlayers = this.players.filter(p => p.alive);
+                        if (alivePlayers.length === 0) {
+                            this.gameOver();
+                        }
+                    }
+                    return;
                 }
-                return;
             }
-        }
-        
-        // Scoring is now handled in createFireballs() when a new wave starts
+        });
     }
     
     update() {
         if (!this.gameRunning || this.gamePaused) return;
         
         this.updateAlien();
-        this.updateHero();
+        this.updatePlayers();
         this.createFireballs();
         this.updateFireballs();
         this.checkCollisions();
@@ -327,48 +371,58 @@ class Game {
         this.ctx.restore();
     }
     
-    drawHero() {
-        const heroX = this.centerX + Math.cos(this.hero.angle) * this.circleRadius;
-        const heroY = this.centerY + Math.sin(this.hero.angle) * this.circleRadius;
-        
-        this.ctx.save();
-        this.ctx.translate(heroX, heroY);
-        
-        // Rotate to face the center (add PI to point inward)
-        this.ctx.rotate(this.hero.angle + Math.PI);
-        
-        if (this.heroImageLoaded) {
-            // Draw hero image while preserving aspect ratio
-            const diameter = this.config.hero.size;
-            const imageAspect = this.heroImage.width / this.heroImage.height;
+    drawPlayers() {
+        this.players.forEach(player => {
+            if (!player.alive) return;
             
-            let drawWidth, drawHeight;
-            if (imageAspect >= 1) {
-                // Image is wider or square - scale by diameter as width
-                drawWidth = diameter;
-                drawHeight = diameter / imageAspect;
+            const playerX = this.centerX + Math.cos(player.angle) * this.circleRadius;
+            const playerY = this.centerY + Math.sin(player.angle) * this.circleRadius;
+            
+            this.ctx.save();
+            this.ctx.translate(playerX, playerY);
+            
+            // Draw transparent colored circle below player
+            this.ctx.fillStyle = player.color;
+            this.ctx.beginPath();
+            this.ctx.arc(0, 8, 20, 0, Math.PI * 2); // Circle below the player
+            this.ctx.fill();
+            
+            // Rotate to face the center (add PI to point inward)
+            this.ctx.rotate(player.angle + Math.PI);
+            
+            if (this.heroImageLoaded) {
+                // Draw hero image while preserving aspect ratio
+                const diameter = this.config.hero.size;
+                const imageAspect = this.heroImage.width / this.heroImage.height;
+                
+                let drawWidth, drawHeight;
+                if (imageAspect >= 1) {
+                    // Image is wider or square - scale by diameter as width
+                    drawWidth = diameter;
+                    drawHeight = diameter / imageAspect;
+                } else {
+                    // Image is taller - scale by diameter as height
+                    drawHeight = diameter;
+                    drawWidth = diameter * imageAspect;
+                }
+                
+                this.ctx.drawImage(this.heroImage, -drawWidth/2, -drawHeight/2, drawWidth, drawHeight);
             } else {
-                // Image is taller - scale by diameter as height
-                drawHeight = diameter;
-                drawWidth = diameter * imageAspect;
+                // Fallback: Draw player circle if image not loaded
+                this.ctx.fillStyle = '#10B981';
+                this.ctx.beginPath();
+                this.ctx.arc(0, 0, player.radius, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Draw player highlight
+                this.ctx.fillStyle = '#34D399';
+                this.ctx.beginPath();
+                this.ctx.arc(-2, -2, 3, 0, Math.PI * 2);
+                this.ctx.fill();
             }
             
-            this.ctx.drawImage(this.heroImage, -drawWidth/2, -drawHeight/2, drawWidth, drawHeight);
-        } else {
-            // Fallback: Draw hero circle if image not loaded
-            this.ctx.fillStyle = '#10B981';
-            this.ctx.beginPath();
-            this.ctx.arc(0, 0, this.hero.radius, 0, Math.PI * 2);
-            this.ctx.fill();
-            
-            // Draw hero highlight
-            this.ctx.fillStyle = '#34D399';
-            this.ctx.beginPath();
-            this.ctx.arc(-2, -2, 3, 0, Math.PI * 2);
-            this.ctx.fill();
-        }
-        
-        this.ctx.restore();
+            this.ctx.restore();
+        });
     }
     
     drawCirclePath() {
@@ -491,7 +545,7 @@ class Game {
         this.drawCirclePath();
         this.drawAlien();
         this.drawFireballs();
-        this.drawHero();
+        this.drawPlayers();
         
         // Draw cheat mode indicator
         this.drawCheatModeIndicator();
@@ -501,7 +555,10 @@ class Game {
     }
     
     updateUI() {
-        document.getElementById('score').textContent = this.score;
+        // Show both players' scores
+        const player1Score = this.players[0].score;
+        const player2Score = this.players[1].score;
+        document.getElementById('score').textContent = `P1: ${player1Score} | P2: ${player2Score}`;
         document.getElementById('highScore').textContent = this.highScore;
     }
     
@@ -594,7 +651,8 @@ class Game {
     
     gameOver() {
         this.gameRunning = false;
-        document.getElementById('finalScore').textContent = this.score;
+        const highestScore = Math.max(...this.players.map(p => p.score));
+        document.getElementById('finalScore').textContent = highestScore;
         document.getElementById('gameOver').style.display = 'block';
     }
     

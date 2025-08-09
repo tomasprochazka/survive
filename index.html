@@ -170,6 +170,49 @@
             color: #F59E0B;
             font-weight: bold;
         }
+        
+        .screen-divider {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, 
+                transparent 0%, 
+                rgba(255, 255, 255, 0.3) 25%, 
+                rgba(255, 255, 255, 0.6) 50%, 
+                rgba(255, 255, 255, 0.3) 75%, 
+                transparent 100%);
+            pointer-events: none;
+            z-index: 10;
+        }
+        
+        .player-zones {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+            z-index: 5;
+        }
+        
+        .player-zone-label {
+            position: absolute;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 14px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+            left: 20px;
+        }
+        
+        .player-2-zone {
+            top: 20px;
+        }
+        
+        .player-1-zone {
+            bottom: 20px;
+        }
     </style>
 </head>
 <body>
@@ -189,13 +232,21 @@
 
         
         <div class="game-info">
-            <div>Survive the Anton Jaromír</div>
+            <div>Multiplayer Survive - Player 2 (Orange): Tap Upper Half | Player 1 (Blue): Tap Lower Half</div>
         </div>
         
-      
+        <!-- Visual divider for multiplayer zones -->
+        <div class="screen-divider"></div>
+        
+        <!-- Player zone labels -->
+        <div class="player-zones">
+            <div class="player-zone-label player-2-zone">Player 2 Zone (Orange) - Tap Here</div>
+            <div class="player-zone-label player-1-zone">Player 1 Zone (Blue) - Tap Here</div>
+        </div>
+        
         <div class="game-over" id="gameOver">
             <h2>Game Over!</h2>
-            <p>Final Score: <span id="finalScore">0</span></p>
+            <p>Your score is: <span id="finalScore">0</span></p>
             <button class="restart-btn" onclick="restartGame()">Play Again</button>
         </div>
         
