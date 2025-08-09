@@ -127,7 +127,10 @@ class Game {
     }
     
     setupInput() {
-        // Mouse/touch input for both players
+        // Track active touches to avoid duplicate inputs
+        this.activeTouches = new Set();
+        
+        // Mouse input for desktop
         this.canvas.addEventListener('click', (e) => {
             if (this.gameRunning) {
                 this.handlePlayerInput(e.clientY);
@@ -138,10 +141,32 @@ class Game {
         this.canvas.addEventListener('touchstart', (e) => {
             e.preventDefault();
             if (this.gameRunning) {
-                // Handle all touches simultaneously
-                for (let i = 0; i < e.touches.length; i++) {
-                    this.handlePlayerInput(e.touches[i].clientY);
+                // Process each new touch
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    const touch = e.changedTouches[i];
+                    if (!this.activeTouches.has(touch.identifier)) {
+                        this.activeTouches.add(touch.identifier);
+                        this.handlePlayerInput(touch.clientY);
+                    }
                 }
+            }
+        });
+        
+        // Handle touch end to clean up active touches
+        this.canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                const touch = e.changedTouches[i];
+                this.activeTouches.delete(touch.identifier);
+            }
+        });
+        
+        // Handle touch cancel to clean up active touches
+        this.canvas.addEventListener('touchcancel', (e) => {
+            e.preventDefault();
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                const touch = e.changedTouches[i];
+                this.activeTouches.delete(touch.identifier);
             }
         });
         
