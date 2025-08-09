@@ -399,8 +399,8 @@
                     displaySpeed = speed * 2.237; // m/s to mph
                 }
 
-                // Round to 1 decimal place
-                displaySpeed = Math.round(displaySpeed * 10) / 10;
+                // Round to whole number (no decimals)
+                displaySpeed = Math.round(displaySpeed);
                 this.currentSpeed = displaySpeed;
                 
                 this.updateSpeedDisplay(displaySpeed);
@@ -884,10 +884,14 @@ Praha hl.n.,22:47`;
                     const stop = this.timetable[i];
                     if (stop.departureTime > now) {
                         const minutesUntil = Math.floor((stop.departureTime - now) / (1000 * 60));
+                        const secondsUntil = Math.floor((stop.departureTime - now) / 1000);
+                        
                         return {
                             name: stop.name,
                             minutes: minutesUntil,
-                            time: stop.time
+                            seconds: secondsUntil,
+                            time: stop.time,
+                            departureTime: stop.departureTime
                         };
                     }
                 }
@@ -910,12 +914,14 @@ Praha hl.n.,22:47`;
             updateNextStopDisplay() {
                 const nextStop = this.getNextStop();
                 const destination = this.getDestinationInfo();
-                const pragueTime = this.getPragueTime();
                 
                 let html = '';
                 
                 if (nextStop) {
-                    if (nextStop.minutes <= 0) {
+                    // Check if we're within 2 minutes of departure (120 seconds)
+                    if (nextStop.seconds <= 120 && nextStop.seconds > 0) {
+                        html = `Ve stanici ${nextStop.name}. Vyjíždíme za ${nextStop.seconds} sekund`;
+                    } else if (nextStop.minutes <= 0) {
                         html = `Arriving at ${nextStop.name} now!`;
                     } else {
                         html = `Next stop ${nextStop.name} in ${nextStop.minutes} mins`;
@@ -930,9 +936,6 @@ Praha hl.n.,22:47`;
                 } else {
                     html += `<div class="destination-info">Arrived at Praha hl.n.</div>`;
                 }
-                
-                // Add debug time info
-                html += `<div class="debug-time">Prague time: ${pragueTime.toLocaleTimeString('cs-CZ')}</div>`;
                 
                 this.nextStopElement.innerHTML = html;
             }
