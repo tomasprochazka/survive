@@ -134,11 +134,14 @@ class Game {
             }
         });
         
-        // Touch support for mobile
+        // Touch support for mobile - handle multiple simultaneous touches
         this.canvas.addEventListener('touchstart', (e) => {
             e.preventDefault();
-            if (this.gameRunning && e.touches.length > 0) {
-                this.handlePlayerInput(e.touches[0].clientY);
+            if (this.gameRunning) {
+                // Handle all touches simultaneously
+                for (let i = 0; i < e.touches.length; i++) {
+                    this.handlePlayerInput(e.touches[i].clientY);
+                }
             }
         });
         
@@ -273,13 +276,8 @@ class Game {
                         this.showHitIndicator = true;
                         this.hitIndicatorTime = Date.now();
                     } else {
-                        // Normal mode - player dies
-                        player.alive = false;
-                        // Check if any player is still alive
-                        const alivePlayers = this.players.filter(p => p.alive);
-                        if (alivePlayers.length === 0) {
-                            this.gameOver();
-                        }
+                        // Normal mode - game over immediately when any player dies
+                        this.gameOver();
                     }
                     return;
                 }
