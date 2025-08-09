@@ -385,30 +385,30 @@
                 // Clear canvas
                 this.trackCtx.clearRect(0, 0, this.trackCanvas.width, this.trackCanvas.height);
                 
-                // Get current position (head)
+                // Get current position (always at center)
                 const currentPos = this.locationHistory[this.locationHistory.length - 1];
+                const centerX = this.trackCanvas.width / 2;
+                const centerY = this.trackCanvas.height / 2;
                 
-                // Find bounds for longitude (horizontal spread)
+                // Find the extent of movement to determine scale
+                const lats = this.locationHistory.map(p => p.lat);
                 const lngs = this.locationHistory.map(p => p.lng);
-                const minLng = Math.min(...lngs);
-                const maxLng = Math.max(...lngs);
-                const lngRange = Math.max(maxLng - minLng, 0.001);
-                const lngPadding = 0.2; // 20% padding on sides
+                const latRange = Math.max(...lats) - Math.min(...lats);
+                const lngRange = Math.max(...lngs) - Math.min(...lngs);
                 
-                // Center longitude range around current position
-                const lngCenter = currentPos.lng;
-                const lngSpread = Math.max(lngRange * (1 + lngPadding), 0.002);
-                const scaledMinLng = lngCenter - lngSpread / 2;
-                const scaledMaxLng = lngCenter + lngSpread / 2;
+                // Determine scale to fit track nicely on screen
+                const maxRange = Math.max(latRange, lngRange, 0.002); // Minimum range
+                const scale = Math.min(this.trackCanvas.width, this.trackCanvas.height) * 0.7 / maxRange;
                 
-                // Map coordinates to screen space - current position at top center
-                const mapToScreen = (lat, lng, index) => {
-                    // X: center longitude at screen center
-                    const x = ((lng - scaledMinLng) / (scaledMaxLng - scaledMinLng)) * this.trackCanvas.width;
+                // Map coordinates to screen space - geographic mapping with current position at center
+                const mapToScreen = (lat, lng) => {
+                    // Calculate relative position from current location
+                    const deltaLat = lat - currentPos.lat;
+                    const deltaLng = lng - currentPos.lng;
                     
-                    // Y: use time-based positioning - newest at top, oldest at bottom
-                    const timeIndex = this.locationHistory.length - 1 - index; // Reverse index
-                    const y = (timeIndex / (this.locationHistory.length - 1)) * (this.trackCanvas.height * 0.8) + 50;
+                    // Convert to screen coordinates (north = up, east = right)
+                    const x = centerX + (deltaLng * scale * 111320 * Math.cos(currentPos.lat * Math.PI / 180)) / 111320; // Adjust for longitude convergence
+                    const y = centerY - (deltaLat * scale * 111320) / 111320; // North is up (negative Y)
                     
                     return { x, y };
                 };
@@ -420,21 +420,21 @@
                 this.trackCtx.lineJoin = 'round';
                 this.trackCtx.beginPath();
                 
-                const firstPoint = mapToScreen(this.locationHistory[0].lat, this.locationHistory[0].lng, 0);
+                const firstPoint = mapToScreen(this.locationHistory[0].lat, this.locationHistory[0].lng);
                 this.trackCtx.moveTo(firstPoint.x, firstPoint.y);
                 
                 // Draw line from oldest to newest
                 for (let i = 1; i < this.locationHistory.length; i++) {
-                    const point = mapToScreen(this.locationHistory[i].lat, this.locationHistory[i].lng, i);
+                    const point = mapToScreen(this.locationHistory[i].lat, this.locationHistory[i].lng);
                     this.trackCtx.lineTo(point.x, point.y);
                 }
                 
                 this.trackCtx.stroke();
                 
                 // Draw speed-colored dots
-                for (let i = 0; i < this.locationHistory.length; i += 5) { // Every 5th point
+                for (let i = 0; i < this.locationHistory.length; i += 3) { // Every 3rd point
                     const location = this.locationHistory[i];
-                    const point = mapToScreen(location.lat, location.lng, i);
+                    const point = mapToScreen(location.lat, location.lng);
                     const speed = location.speed * 3.6; // Convert to km/h
                     
                     // Color based on speed
@@ -449,13 +449,12 @@
                     this.trackCtx.fill();
                 }
                 
-                // Draw current position at top center
-                const currentPoint = mapToScreen(currentPos.lat, currentPos.lng, this.locationHistory.length - 1);
+                // Draw current position at center (always at centerX, centerY)
                 this.trackCtx.fillStyle = '#00ff00';
                 this.trackCtx.strokeStyle = '#ffffff';
                 this.trackCtx.lineWidth = 2;
                 this.trackCtx.beginPath();
-                this.trackCtx.arc(currentPoint.x, currentPoint.y, 8, 0, Math.PI * 2);
+                this.trackCtx.arc(centerX, centerY, 8, 0, Math.PI * 2);
                 this.trackCtx.fill();
                 this.trackCtx.stroke();
             }
