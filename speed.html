@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>GPS Speed Tracker</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .speed-container {
+            text-align: center;
+            color: #00ff00;
+            text-shadow: 0 0 20px #00ff00;
+        }
+
+        .speed-display {
+            font-size: 15rem;
+            font-weight: bold;
+            line-height: 1;
+            margin: 0;
+        }
+
+        .speed-unit {
+            font-size: 3rem;
+            margin-top: 10px;
+            opacity: 0.8;
+        }
+
+        .status {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #fff;
+            font-size: 14px;
+            opacity: 0.7;
+        }
+
+        .error {
+            color: #ff4444;
+            font-size: 2rem;
+            text-align: center;
+        }
+
+        @media (max-width: 768px) {
+            .speed-display {
+                font-size: 12rem;
+            }
+            .speed-unit {
+                font-size: 2.5rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .speed-display {
+                font-size: 8rem;
+            }
+            .speed-unit {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="status" id="status">Requesting GPS...</div>
+    
+    <div class="speed-container" id="speedContainer">
+        <div class="speed-display" id="speedDisplay">--</div>
+        <div class="speed-unit" id="speedUnit">km/h</div>
+    </div>
+
+    <script>
+        class SpeedTracker {
+            constructor() {
+                this.speedDisplay = document.getElementById('speedDisplay');
+                this.speedUnit = document.getElementById('speedUnit');
+                this.status = document.getElementById('status');
+                this.speedContainer = document.getElementById('speedContainer');
+                
+                this.watchId = null;
+                this.isKmh = true; // true for km/h, false for mph
+                
+                this.initGPS();
+                this.setupControls();
+            }
+
+            initGPS() {
+                if (!navigator.geolocation) {
+                    this.showError('GPS not supported');
+                    return;
+                }
+
+                const options = {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 1000
+                };
+
+                this.status.textContent = 'Requesting GPS permission...';
+
+                this.watchId = navigator.geolocation.watchPosition(
+                    (position) => this.handlePosition(position),
+                    (error) => this.handleError(error),
+                    options
+                );
+            }
+
+            handlePosition(position) {
+                const speed = position.coords.speed; // Speed in m/s
+                
+                if (speed === null || speed === undefined) {
+                    this.speedDisplay.textContent = '--';
+                    this.status.textContent = 'GPS active - No speed data';
+                    return;
+                }
+
+                // Convert m/s to km/h or mph
+                let displaySpeed;
+                if (this.isKmh) {
+                    displaySpeed = speed * 3.6; // m/s to km/h
+                } else {
+                    displaySpeed = speed * 2.237; // m/s to mph
+                }
+
+                // Round to 1 decimal place
+                displaySpeed = Math.round(displaySpeed * 10) / 10;
+
+                this.speedDisplay.textContent = displaySpeed;
+                
+                const accuracy = Math.round(position.coords.accuracy);
+                this.status.textContent = `GPS active - Accuracy: ±${accuracy}m`;
+            }
+
+            handleError(error) {
+                let errorMessage = '';
+                switch(error.code) {
+                    case error.PERMISSION_DENIED:
+                        errorMessage = 'GPS permission denied';
+                        break;
+                    case error.POSITION_UNAVAILABLE:
+                        errorMessage = 'GPS unavailable';
+                        break;
+                    case error.TIMEOUT:
+                        errorMessage = 'GPS timeout';
+                        break;
+                    default:
+                        errorMessage = 'GPS error';
+                        break;
+                }
+                this.showError(errorMessage);
+            }
+
+            showError(message) {
+                this.speedContainer.innerHTML = `<div class="error">${message}</div>`;
+                this.status.textContent = message;
+            }
+
+            setupControls() {
+                // Tap to switch between km/h and mph
+                this.speedContainer.addEventListener('click', () => {
+                    this.isKmh = !this.isKmh;
+                    this.speedUnit.textContent = this.isKmh ? 'km/h' : 'mph';
+                });
+
+                // Prevent screen from sleeping
+                if ('wakeLock' in navigator) {
+                    navigator.wakeLock.request('screen').catch(() => {
+                        // Wake lock not available or permission denied
+                    });
+                }
+            }
+
+            destroy() {
+                if (this.watchId !== null) {
+                    navigator.geolocation.clearWatch(this.watchId);
+                }
+            }
+        }
+
+        // Initialize when page loads
+        let speedTracker;
+        window.addEventListener('load', () => {
+            speedTracker = new SpeedTracker();
+        });
+
+        // Cleanup when page unloads
+        window.addEventListener('beforeunload', () => {
+            if (speedTracker) {
+                speedTracker.destroy();
+            }
+        });
+    </script>
+</body>
+</html>
