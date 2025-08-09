@@ -52,7 +52,7 @@
             align-items: center;
             justify-content: flex-end;
             height: 100%;
-            padding-bottom: 20px;
+            padding-bottom: 70px;
         }
 
         .mode-analog {
@@ -187,14 +187,14 @@
             line-height: 1;
             margin: 0;
             color: #ffffff;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            text-shadow: none;
         }
 
         .speed-unit {
             font-size: 3rem;
             margin-top: 10px;
             color: #ffffff;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            text-shadow: none;
         }
 
         .status {
@@ -206,6 +206,22 @@
             opacity: 0.9;
             max-width: 300px;
             line-height: 1.3;
+        }
+        
+        .next-stop-info {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #ffffff;
+            font-size: 18px;
+            font-weight: bold;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 20px;
+            border-radius: 10px;
+            text-align: center;
+            min-width: 250px;
+            z-index: 10;
         }
 
 
@@ -297,13 +313,19 @@
                 this.isZooming = false;
                 this.lastPinchDistance = 0;
                 this.touches = [];
+                this.timetable = [];
+                this.nextStopElement = null;
+                
+                this.parseTimetable();
                 
                 this.createModeElements();
                 this.createTrackCanvas();
+                this.createNextStopDisplay();
                 this.initGPS();
                 this.setupControls();
                 this.setupZoomControls();
                 this.startHistoryUpdates();
+                this.startNextStopUpdates();
             }
 
             initGPS() {
@@ -787,6 +809,92 @@
                     }
                 }
                 this.mapTiles = currentZoomTiles;
+            }
+            
+            parseTimetable() {
+                const csvData = `Košice,14:48
+Kysak,15:02
+Spišská Nová Ves,15:45
+Poprad-Tatry,16:10
+Štrba,16:23
+Liptovský Mikuláš,16:52
+Ružomberok,17:09
+Královany,17:25
+Vrútky,17:39
+Žilina,18:03
+Čadca,18:35
+Český Těšín (Czeski Cieszyn),19:04
+Ostrava hl.n.,19:34
+Ostrava-Svinov,19:42
+Olomouc hl.n.,20:35
+Česká Třebová,21:15
+Pardubice hl.n.,21:48
+Kolín,22:10
+Praha-Libeň,22:40
+Praha hl.n.,22:47`;
+                
+                const lines = csvData.trim().split('\n');
+                this.timetable = lines.map(line => {
+                    const [name, time] = line.split(',');
+                    const [hours, minutes] = time.split(':').map(Number);
+                    const today = new Date();
+                    const departureTime = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hours, minutes);
+                    
+                    return {
+                        name: name.trim(),
+                        time: time.trim(),
+                        departureTime: departureTime
+                    };
+                });
+            }
+            
+            createNextStopDisplay() {
+                this.nextStopElement = document.createElement('div');
+                this.nextStopElement.className = 'next-stop-info';
+                this.nextStopElement.textContent = 'Loading timetable...';
+                document.body.appendChild(this.nextStopElement);
+            }
+            
+            getNextStop() {
+                const now = new Date();
+                
+                // Find the next stop after current time
+                for (let i = 0; i < this.timetable.length; i++) {
+                    const stop = this.timetable[i];
+                    if (stop.departureTime > now) {
+                        const minutesUntil = Math.floor((stop.departureTime - now) / (1000 * 60));
+                        return {
+                            name: stop.name,
+                            minutes: minutesUntil,
+                            time: stop.time
+                        };
+                    }
+                }
+                
+                // If no stops found for today, train has completed its route
+                return null;
+            }
+            
+            updateNextStopDisplay() {
+                const nextStop = this.getNextStop();
+                
+                if (nextStop) {
+                    if (nextStop.minutes <= 0) {
+                        this.nextStopElement.textContent = `Arriving at ${nextStop.name} now!`;
+                    } else {
+                        this.nextStopElement.textContent = `Next stop ${nextStop.name} in ${nextStop.minutes} mins`;
+                    }
+                } else {
+                    this.nextStopElement.textContent = 'Journey completed - Praha hl.n.';
+                }
+            }
+            
+            startNextStopUpdates() {
+                this.updateNextStopDisplay();
+                // Update every 30 seconds
+                setInterval(() => {
+                    this.updateNextStopDisplay();
+                }, 30000);
             }
 
             destroy() {
