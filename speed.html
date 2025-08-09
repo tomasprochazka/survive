@@ -28,7 +28,7 @@
             left: 0;
             width: 100vw;
             height: 100vh;
-            z-index: -1;
+            z-index: 0;
             touch-action: none;
         }
 
@@ -38,15 +38,21 @@
             width: 100%;
             height: 100%;
             position: relative;
+            z-index: 1;
+            pointer-events: none;
+        }
+        
+        .speed-container * {
+            pointer-events: auto;
         }
 
         .mode-digital {
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: flex-end;
+            justify-content: center;
             height: 100%;
-            padding-bottom: 50px;
+            padding-bottom: 20vh;
         }
 
         .mode-analog {
@@ -54,6 +60,7 @@
             align-items: center;
             justify-content: center;
             height: 100%;
+            padding-bottom: 20vh;
         }
 
         .mode-chart {
@@ -62,6 +69,7 @@
             align-items: center;
             justify-content: center;
             height: 100%;
+            padding-bottom: 10vh;
         }
 
         .speedometer {
@@ -119,8 +127,11 @@
             left: 50%;
             transform: translateX(-50%);
             font-size: 2rem;
-            color: #00ff00;
-            text-shadow: 0 0 10px #00ff00;
+            color: #000000;
+            text-shadow: 2px 2px 4px rgba(255,255,255,0.8);
+            background: rgba(255,255,255,0.7);
+            padding: 5px 10px;
+            border-radius: 5px;
         }
 
         .chart-container {
@@ -150,9 +161,12 @@
         }
 
         .chart-info {
-            color: #00ff00;
+            color: #000000;
             font-size: 1.5rem;
             text-align: center;
+            background: rgba(255,255,255,0.8);
+            padding: 10px;
+            border-radius: 10px;
         }
 
         .mode-indicator {
@@ -423,8 +437,8 @@
                     img.onerror = () => reject(new Error(`Failed to load tile ${tileKey}`));
                 });
                 
-                // Use OpenStreetMap tile server
-                img.src = `https://tile.openstreetmap.org/${zoom}/${x}/${y}.png`;
+                // Use satellite imagery with labels (Google-style hybrid)
+                img.src = `https://mt1.google.com/vt/lyrs=y&x=${x}&y=${y}&z=${zoom}`;
                 
                 this.mapTiles.set(tileKey, tilePromise);
                 return tilePromise;
