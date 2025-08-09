@@ -86,8 +86,18 @@ class Game {
             y: this.centerY,
             radius: this.config.alien.size / 2,
             rotation: 0,
-            rotationSpeed: this.config.alien.rotationSpeed
+            rotationSpeed: this.config.alien.rotationSpeed,
+            baseRotationSpeed: this.config.alien.rotationSpeed,
+            state: 'rotating', // 'rotating', 'stopping', 'aiming', 'firing'
+            rotationTime: 0,
+            rotationDuration: 0,
+            aimingTime: 0,
+            targetAngles: [],
+            showTargetIndicators: false
         };
+        
+        // Initialize first rotation duration
+        this.alien.rotationDuration = this.getRandomRotationDuration();
         
         // Circle path properties - 85% of smaller screen dimension
         this.circleRadius = Math.min(this.width, this.height) * 0.85 / 2;
@@ -199,42 +209,14 @@ class Game {
         }
     }
     
+    getRandomRotationDuration() {
+        // Return random duration between 1000ms (1s) and 3000ms (3s)
+        return Math.random() * 2000 + 1000;
+    }
+    
     createFireballs() {
-        const currentTime = Date.now();
-        if (currentTime - this.lastFireballTime > this.fireballCooldown) {
-            // Award score for surviving the previous wave (if there was one) - but not in cheat mode
-            if (this.lastFireballTime > 0 && !this.waveSurvived && !this.cheatMode) {
-                // Award score to all alive players
-                this.players.forEach(player => {
-                    if (player.alive) {
-                        player.score += 1;
-                    }
-                });
-                this.waveSurvived = true;
-                
-                // Update high score if any player's score exceeds it
-                const maxScore = Math.max(...this.players.map(p => p.score));
-                if (maxScore > this.highScore) {
-                    this.highScore = maxScore;
-                    this.saveHighScore();
-                }
-            }
-            
-            // Create 3 fireballs in different directions
-            for (let i = 0; i < 3; i++) {
-                const angle = (Math.PI * 2 / 3) * i + this.alien.rotation;
-                this.fireballs.push({
-                    x: this.alien.x,
-                    y: this.alien.y,
-                    angle: angle,
-                    speed: this.config.fireball.speed,
-                    radius: this.config.fireball.size / 2,
-                    life: 0
-                });
-            }
-            this.lastFireballTime = currentTime;
-            this.waveSurvived = false; // Reset wave survival flag for new wave
-        }
+        // Fireball creation is now handled in updateAlien when alien is in 'firing' state
+        // This method is kept for compatibility but logic moved to updateAlien
     }
     
     updateFireballs() {
@@ -275,10 +257,98 @@ class Game {
     }
     
     updateAlien() {
-        // Rotate alien
-        this.alien.rotation += this.alien.rotationSpeed;
-        if (this.alien.rotation > Math.PI * 2) {
-            this.alien.rotation -= Math.PI * 2;
+        const currentTime = Date.now();
+        const deltaTime = 16; // Approximate frame time in ms (60fps)
+        
+        switch (this.alien.state) {
+            case 'rotating':
+                // Rotate alien
+                this.alien.rotation += this.alien.rotationSpeed;
+                if (this.alien.rotation > Math.PI * 2) {
+                    this.alien.rotation -= Math.PI * 2;
+                }
+                
+                this.alien.rotationTime += deltaTime;
+                
+                // Check if rotation duration is complete
+                if (this.alien.rotationTime >= this.alien.rotationDuration) {
+                    this.alien.state = 'stopping';
+                    this.alien.rotationTime = 0;
+                }
+                break;
+                
+            case 'stopping':
+                // Gradually reduce rotation speed to 0
+                this.alien.rotationSpeed *= 0.95; // Smooth deceleration
+                
+                if (Math.abs(this.alien.rotationSpeed) < 0.001) {
+                    this.alien.rotationSpeed = 0;
+                    this.alien.state = 'aiming';
+                    this.alien.aimingTime = 0;
+                    
+                    // Calculate target angles for fireballs
+                    this.alien.targetAngles = [];
+                    for (let i = 0; i < 3; i++) {
+                        this.alien.targetAngles.push((Math.PI * 2 / 3) * i + this.alien.rotation);
+                    }
+                    this.alien.showTargetIndicators = true;
+                } else {
+                    // Continue rotating while slowing down
+                    this.alien.rotation += this.alien.rotationSpeed;
+                    if (this.alien.rotation > Math.PI * 2) {
+                        this.alien.rotation -= Math.PI * 2;
+                    }
+                }
+                break;
+                
+            case 'aiming':
+                this.alien.aimingTime += deltaTime;
+                
+                // Show target indicators for 1 second
+                if (this.alien.aimingTime >= 1000) {
+                    this.alien.state = 'firing';
+                    this.alien.showTargetIndicators = false;
+                    
+                    // Award score for surviving the previous wave - but not in cheat mode
+                    if (!this.cheatMode && this.fireballs.length === 0) {
+                        this.players.forEach(player => {
+                            if (player.alive) {
+                                player.score += 1;
+                            }
+                        });
+                        
+                        // Update high score if any player's score exceeds it
+                        const maxScore = Math.max(...this.players.map(p => p.score));
+                        if (maxScore > this.highScore) {
+                            this.highScore = maxScore;
+                            this.saveHighScore();
+                        }
+                    }
+                    
+                    // Fire fireballs
+                    this.alien.targetAngles.forEach(angle => {
+                        this.fireballs.push({
+                            x: this.alien.x,
+                            y: this.alien.y,
+                            angle: angle,
+                            speed: this.config.fireball.speed,
+                            radius: this.config.fireball.size / 2,
+                            life: 0
+                        });
+                    });
+                }
+                break;
+                
+            case 'firing':
+                // Wait for all fireballs to be off screen, then start rotating again
+                if (this.fireballs.length === 0) {
+                    this.alien.state = 'rotating';
+                    this.alien.rotationTime = 0;
+                    this.alien.rotationDuration = this.getRandomRotationDuration();
+                    this.alien.rotationSpeed = this.alien.baseRotationSpeed;
+                    this.alien.targetAngles = [];
+                }
+                break;
         }
     }
     
@@ -448,8 +518,29 @@ class Game {
         });
     }
     
+    drawTargetIndicators() {
+        if (!this.alien.showTargetIndicators || this.alien.targetAngles.length === 0) return;
+        
+        this.ctx.save();
+        this.ctx.fillStyle = 'rgba(255, 0, 0, 0.7)';
+        
+        this.alien.targetAngles.forEach(angle => {
+            // Calculate where the fireball will hit the circle
+            const hitX = this.centerX + Math.cos(angle) * this.circleRadius;
+            const hitY = this.centerY + Math.sin(angle) * this.circleRadius;
+            
+            // Draw small pulsing circle
+            const pulseScale = 0.8 + 0.2 * Math.sin(Date.now() * 0.01);
+            this.ctx.beginPath();
+            this.ctx.arc(hitX, hitY, 8 * pulseScale, 0, Math.PI * 2);
+            this.ctx.fill();
+        });
+        
+        this.ctx.restore();
+    }
+    
     drawCirclePath() {
-        this.ctx.strokeStyle = 'red';
+        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
         this.ctx.lineWidth = 2;
         this.ctx.beginPath();
         this.ctx.arc(this.centerX, this.centerY, this.circleRadius, 0, Math.PI * 2);
@@ -533,28 +624,7 @@ class Game {
             this.ctx.globalAlpha = 1.0;
         }
         
-        // Draw decorative elements over the background
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-        
-        // Draw some decorative crosses
-        for (let i = 0; i < 5; i++) {
-            const x = Math.random() * this.width;
-            const y = Math.random() * this.height;
-            const size = 15;
-            
-            this.ctx.fillRect(x - size/2, y - 2, size, 4);
-            this.ctx.fillRect(x - 2, y - size/2, 4, size);
-        }
-        
-        // Draw some small circles
-        for (let i = 0; i < 8; i++) {
-            const x = Math.random() * this.width;
-            const y = Math.random() * this.height;
-            
-            this.ctx.beginPath();
-            this.ctx.arc(x, y, 3, 0, Math.PI * 2);
-            this.ctx.fill();
-        }
+        // Decorative background elements removed for cleaner gameplay
     }
     
     draw() {
@@ -566,6 +636,7 @@ class Game {
         
         // Draw game elements
         this.drawCirclePath();
+        this.drawTargetIndicators();
         this.drawAlien();
         this.drawFireballs();
         this.drawPlayers();
