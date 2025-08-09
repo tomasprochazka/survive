@@ -272,11 +272,17 @@
                 this.mapTiles = new Map(); // Cache for map tiles
                 this.currentZoom = 16; // Default zoom level
                 this.tileSize = 256;
+                this.minZoom = 10;
+                this.maxZoom = 19;
+                this.isZooming = false;
+                this.lastPinchDistance = 0;
+                this.touches = [];
                 
                 this.createModeElements();
                 this.createTrackCanvas();
                 this.initGPS();
                 this.setupControls();
+                this.setupZoomControls();
                 this.startHistoryUpdates();
             }
 
@@ -641,9 +647,11 @@
             }
 
             setupControls() {
-                // Tap to cycle between modes
-                this.speedContainer.addEventListener('click', () => {
-                    this.switchMode();
+                // Tap to cycle between modes (only if not zooming)
+                this.speedContainer.addEventListener('click', (e) => {
+                    if (!this.isZooming) {
+                        this.switchMode();
+                    }
                 });
 
                 // Prevent screen from sleeping
@@ -652,6 +660,109 @@
                         // Wake lock not available or permission denied
                     });
                 }
+            }
+            
+            setupZoomControls() {
+                // Touch start
+                this.trackCanvas.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    this.touches = Array.from(e.touches).map(touch => ({
+                        id: touch.identifier,
+                        x: touch.clientX,
+                        y: touch.clientY
+                    }));
+                    
+                    if (this.touches.length === 2) {
+                        this.isZooming = true;
+                        this.lastPinchDistance = this.getPinchDistance();
+                    }
+                }, { passive: false });
+                
+                // Touch move
+                this.trackCanvas.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    if (this.isZooming && e.touches.length === 2) {
+                        this.touches = Array.from(e.touches).map(touch => ({
+                            id: touch.identifier,
+                            x: touch.clientX,
+                            y: touch.clientY
+                        }));
+                        
+                        const currentDistance = this.getPinchDistance();
+                        const distanceChange = currentDistance - this.lastPinchDistance;
+                        
+                        // Zoom threshold to prevent too sensitive zooming
+                        if (Math.abs(distanceChange) > 10) {
+                            if (distanceChange > 0) {
+                                this.zoomIn();
+                            } else {
+                                this.zoomOut();
+                            }
+                            this.lastPinchDistance = currentDistance;
+                        }
+                    }
+                }, { passive: false });
+                
+                // Touch end
+                this.trackCanvas.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    this.touches = Array.from(e.touches).map(touch => ({
+                        id: touch.identifier,
+                        x: touch.clientX,
+                        y: touch.clientY
+                    }));
+                    
+                    if (this.touches.length < 2) {
+                        // Delay resetting isZooming to prevent accidental mode switches
+                        setTimeout(() => {
+                            this.isZooming = false;
+                        }, 300);
+                    }
+                }, { passive: false });
+                
+                // Mouse wheel zoom for desktop
+                this.trackCanvas.addEventListener('wheel', (e) => {
+                    e.preventDefault();
+                    if (e.deltaY < 0) {
+                        this.zoomIn();
+                    } else {
+                        this.zoomOut();
+                    }
+                }, { passive: false });
+            }
+            
+            getPinchDistance() {
+                if (this.touches.length < 2) return 0;
+                const dx = this.touches[0].x - this.touches[1].x;
+                const dy = this.touches[0].y - this.touches[1].y;
+                return Math.sqrt(dx * dx + dy * dy);
+            }
+            
+            zoomIn() {
+                if (this.currentZoom < this.maxZoom) {
+                    this.currentZoom++;
+                    this.clearTileCache();
+                    this.updateTrack();
+                }
+            }
+            
+            zoomOut() {
+                if (this.currentZoom > this.minZoom) {
+                    this.currentZoom--;
+                    this.clearTileCache();
+                    this.updateTrack();
+                }
+            }
+            
+            clearTileCache() {
+                // Keep some tiles in cache but clear old zoom levels
+                const currentZoomTiles = new Map();
+                for (const [key, value] of this.mapTiles) {
+                    if (key.startsWith(`${this.currentZoom}/`)) {
+                        currentZoomTiles.set(key, value);
+                    }
+                }
+                this.mapTiles = currentZoomTiles;
             }
 
             destroy() {
