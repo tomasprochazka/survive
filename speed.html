@@ -385,28 +385,31 @@
                 // Clear canvas
                 this.trackCtx.clearRect(0, 0, this.trackCanvas.width, this.trackCanvas.height);
                 
-                // Find bounds of all locations
-                const lats = this.locationHistory.map(p => p.lat);
+                // Get current position (head)
+                const currentPos = this.locationHistory[this.locationHistory.length - 1];
+                
+                // Find bounds for longitude (horizontal spread)
                 const lngs = this.locationHistory.map(p => p.lng);
-                const minLat = Math.min(...lats);
-                const maxLat = Math.max(...lats);
                 const minLng = Math.min(...lngs);
                 const maxLng = Math.max(...lngs);
-                
-                // Add padding and ensure minimum range
-                const latRange = Math.max(maxLat - minLat, 0.001); // Minimum 100m range
                 const lngRange = Math.max(maxLng - minLng, 0.001);
-                const padding = 0.1; // 10% padding
+                const lngPadding = 0.2; // 20% padding on sides
                 
-                const scaledMinLat = minLat - latRange * padding;
-                const scaledMaxLat = maxLat + latRange * padding;
-                const scaledMinLng = minLng - lngRange * padding;
-                const scaledMaxLng = maxLng + lngRange * padding;
+                // Center longitude range around current position
+                const lngCenter = currentPos.lng;
+                const lngSpread = Math.max(lngRange * (1 + lngPadding), 0.002);
+                const scaledMinLng = lngCenter - lngSpread / 2;
+                const scaledMaxLng = lngCenter + lngSpread / 2;
                 
-                // Map coordinates to screen space
-                const mapToScreen = (lat, lng) => {
+                // Map coordinates to screen space - current position at top center
+                const mapToScreen = (lat, lng, index) => {
+                    // X: center longitude at screen center
                     const x = ((lng - scaledMinLng) / (scaledMaxLng - scaledMinLng)) * this.trackCanvas.width;
-                    const y = this.trackCanvas.height - ((lat - scaledMinLat) / (scaledMaxLat - scaledMinLat)) * this.trackCanvas.height;
+                    
+                    // Y: use time-based positioning - newest at top, oldest at bottom
+                    const timeIndex = this.locationHistory.length - 1 - index; // Reverse index
+                    const y = (timeIndex / (this.locationHistory.length - 1)) * (this.trackCanvas.height * 0.8) + 50;
+                    
                     return { x, y };
                 };
                 
@@ -417,12 +420,12 @@
                 this.trackCtx.lineJoin = 'round';
                 this.trackCtx.beginPath();
                 
-                const firstPoint = mapToScreen(this.locationHistory[0].lat, this.locationHistory[0].lng);
+                const firstPoint = mapToScreen(this.locationHistory[0].lat, this.locationHistory[0].lng, 0);
                 this.trackCtx.moveTo(firstPoint.x, firstPoint.y);
                 
-                // Draw line with speed-based coloring
+                // Draw line from oldest to newest
                 for (let i = 1; i < this.locationHistory.length; i++) {
-                    const point = mapToScreen(this.locationHistory[i].lat, this.locationHistory[i].lng);
+                    const point = mapToScreen(this.locationHistory[i].lat, this.locationHistory[i].lng, i);
                     this.trackCtx.lineTo(point.x, point.y);
                 }
                 
@@ -431,7 +434,7 @@
                 // Draw speed-colored dots
                 for (let i = 0; i < this.locationHistory.length; i += 5) { // Every 5th point
                     const location = this.locationHistory[i];
-                    const point = mapToScreen(location.lat, location.lng);
+                    const point = mapToScreen(location.lat, location.lng, i);
                     const speed = location.speed * 3.6; // Convert to km/h
                     
                     // Color based on speed
@@ -446,19 +449,15 @@
                     this.trackCtx.fill();
                 }
                 
-                // Draw current position
-                if (this.locationHistory.length > 0) {
-                    const currentPos = this.locationHistory[this.locationHistory.length - 1];
-                    const currentPoint = mapToScreen(currentPos.lat, currentPos.lng);
-                    
-                    this.trackCtx.fillStyle = '#00ff00';
-                    this.trackCtx.strokeStyle = '#ffffff';
-                    this.trackCtx.lineWidth = 2;
-                    this.trackCtx.beginPath();
-                    this.trackCtx.arc(currentPoint.x, currentPoint.y, 8, 0, Math.PI * 2);
-                    this.trackCtx.fill();
-                    this.trackCtx.stroke();
-                }
+                // Draw current position at top center
+                const currentPoint = mapToScreen(currentPos.lat, currentPos.lng, this.locationHistory.length - 1);
+                this.trackCtx.fillStyle = '#00ff00';
+                this.trackCtx.strokeStyle = '#ffffff';
+                this.trackCtx.lineWidth = 2;
+                this.trackCtx.beginPath();
+                this.trackCtx.arc(currentPoint.x, currentPoint.y, 8, 0, Math.PI * 2);
+                this.trackCtx.fill();
+                this.trackCtx.stroke();
             }
 
             createModeElements() {
