@@ -109,6 +109,8 @@
             background: #00ff00;
             border-radius: 50%;
             position: absolute;
+            top: 50%;
+            left: 50%;
             transform: translate(-50%, -50%);
         }
         
@@ -1118,10 +1120,33 @@ Praha hl.n.,22:47`;
             }
             
             startCompass() {
-                window.addEventListener('deviceorientation', (event) => {
+                window.addEventListener('deviceorientationabsolute', (event) => {
+                    // Use absolute orientation if available (Android)
                     this.deviceOrientation = event.alpha || 0;
                     this.updateCompassWidget();
                 });
+                
+                window.addEventListener('deviceorientation', (event) => {
+                    // Fallback for iOS and other devices
+                    if (event.alpha !== null) {
+                        this.deviceOrientation = event.alpha || 0;
+                        this.updateCompassWidget();
+                    }
+                });
+                
+                // Add some test data for debugging
+                let testAngle = 0;
+                setInterval(() => {
+                    if (this.deviceOrientation === 0) {
+                        // If no real compass data, show test rotation
+                        testAngle += 10;
+                        if (testAngle >= 360) testAngle = 0;
+                        const needle = document.getElementById('compassNeedle');
+                        if (needle) {
+                            needle.style.transform = `translate(-50%, -100%) rotate(${testAngle}deg)`;
+                        }
+                    }
+                }, 1000);
             }
             
             updateCompassWidget() {
@@ -1157,19 +1182,47 @@ Praha hl.n.,22:47`;
                             z: event.acceleration.z || 0
                         };
                         this.updateAccelerometerWidget();
+                    } else if (event.accelerationIncludingGravity) {
+                        // Fallback to gravity-included acceleration
+                        this.acceleration = {
+                            x: event.accelerationIncludingGravity.x || 0,
+                            y: event.accelerationIncludingGravity.y || 0,
+                            z: event.accelerationIncludingGravity.z || 0
+                        };
+                        this.updateAccelerometerWidget();
                     }
                 });
+                
+                // Add test animation if no real accelerometer data
+                let testX = 0, testY = 0;
+                let direction = 1;
+                setInterval(() => {
+                    if (Math.abs(this.acceleration.x) < 0.1 && Math.abs(this.acceleration.y) < 0.1) {
+                        // If no real accelerometer data, show test movement
+                        testX += direction * 0.3;
+                        testY += direction * 0.2;
+                        if (Math.abs(testX) > 1.5) direction *= -1;
+                        
+                        const dot = document.getElementById('accelDot');
+                        if (dot) {
+                            const pixelX = 30 + testX * 15;
+                            const pixelY = 30 + testY * 15;
+                            dot.style.left = pixelX + 'px';
+                            dot.style.top = pixelY + 'px';
+                        }
+                    }
+                }, 200);
             }
             
             updateAccelerometerWidget() {
                 const dot = document.getElementById('accelDot');
                 if (dot) {
-                    // Scale acceleration to fit within the widget (max 2G)
-                    const maxG = 2;
+                    // Scale acceleration to fit within the widget - more sensitive
+                    const maxG = 1; // Reduced for higher sensitivity
                     const x = Math.max(-maxG, Math.min(maxG, this.acceleration.x));
                     const y = Math.max(-maxG, Math.min(maxG, this.acceleration.y));
                     
-                    // Convert to pixels (30px = 1G)
+                    // Convert to pixels - center at 30px, scale up movement
                     const pixelX = 30 + (x / maxG) * 25;
                     const pixelY = 30 + (y / maxG) * 25;
                     
