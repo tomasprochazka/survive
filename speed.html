@@ -223,6 +223,18 @@
             min-width: 250px;
             z-index: 10;
         }
+        
+        .destination-info {
+            font-size: 14px;
+            font-weight: normal;
+            margin-top: 5px;
+        }
+        
+        .debug-time {
+            font-size: 12px;
+            opacity: 0.7;
+            margin-top: 5px;
+        }
 
 
         .error {
@@ -837,6 +849,8 @@ Praha hl.n.,22:47`;
                 this.timetable = lines.map(line => {
                     const [name, time] = line.split(',');
                     const [hours, minutes] = time.split(':').map(Number);
+                    
+                    // Create date in Prague timezone (Central European Time)
                     const today = new Date();
                     const departureTime = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hours, minutes);
                     
@@ -855,8 +869,15 @@ Praha hl.n.,22:47`;
                 document.body.appendChild(this.nextStopElement);
             }
             
-            getNextStop() {
+            getPragueTime() {
+                // Get current time in Prague timezone (Central European Time)
                 const now = new Date();
+                const pragueTime = new Date(now.toLocaleString("en-US", {timeZone: "Europe/Prague"}));
+                return pragueTime;
+            }
+            
+            getNextStop() {
+                const now = this.getPragueTime();
                 
                 // Find the next stop after current time
                 for (let i = 0; i < this.timetable.length; i++) {
@@ -875,18 +896,45 @@ Praha hl.n.,22:47`;
                 return null;
             }
             
+            getDestinationInfo() {
+                const now = this.getPragueTime();
+                const destination = this.timetable[this.timetable.length - 1]; // Praha hl.n.
+                const minutesUntilDestination = Math.floor((destination.departureTime - now) / (1000 * 60));
+                return {
+                    name: destination.name,
+                    minutes: minutesUntilDestination,
+                    time: destination.time
+                };
+            }
+            
             updateNextStopDisplay() {
                 const nextStop = this.getNextStop();
+                const destination = this.getDestinationInfo();
+                const pragueTime = this.getPragueTime();
+                
+                let html = '';
                 
                 if (nextStop) {
                     if (nextStop.minutes <= 0) {
-                        this.nextStopElement.textContent = `Arriving at ${nextStop.name} now!`;
+                        html = `Arriving at ${nextStop.name} now!`;
                     } else {
-                        this.nextStopElement.textContent = `Next stop ${nextStop.name} in ${nextStop.minutes} mins`;
+                        html = `Next stop ${nextStop.name} in ${nextStop.minutes} mins`;
                     }
                 } else {
-                    this.nextStopElement.textContent = 'Journey completed - Praha hl.n.';
+                    html = 'Journey completed - Praha hl.n.';
                 }
+                
+                // Add destination info
+                if (destination.minutes > 0) {
+                    html += `<div class="destination-info">Praha hl.n. in ${destination.minutes} mins</div>`;
+                } else {
+                    html += `<div class="destination-info">Arrived at Praha hl.n.</div>`;
+                }
+                
+                // Add debug time info
+                html += `<div class="debug-time">Prague time: ${pragueTime.toLocaleTimeString('cs-CZ')}</div>`;
+                
+                this.nextStopElement.innerHTML = html;
             }
             
             startNextStopUpdates() {
