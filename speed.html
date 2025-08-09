@@ -406,9 +406,10 @@
                 
                 // Update speedometer needle
                 const needle = document.getElementById('speedometerNeedle');
-                const maxSpeed = 150; // km/h
-                const speedToShow = this.isKmh ? speed : speed * 1.609; // Convert mph to km/h for needle position
-                const angle = -90 + (Math.min(speedToShow, maxSpeed) / maxSpeed) * 180;
+                const maxSpeed = 150; // km/h (speedometer is always labeled in km/h)
+                // Always use the speed in km/h for needle position since labels are in km/h
+                const speedInKmh = this.isKmh ? speed : speed * 1.609;
+                const angle = -90 + (Math.min(speedInKmh, maxSpeed) / maxSpeed) * 180;
                 needle.style.transform = `translate(-50%, -100%) rotate(${angle}deg)`;
                 
                 // Chart mode
