@@ -269,6 +269,9 @@
                 this.maxLocationHistory = 120; // 2 minutes of location data
                 this.trackCanvas = null;
                 this.trackCtx = null;
+                this.mapTiles = new Map(); // Cache for map tiles
+                this.currentZoom = 16; // Default zoom level
+                this.tileSize = 256;
                 
                 this.createModeElements();
                 this.createTrackCanvas();
@@ -379,8 +382,56 @@
                 document.body.appendChild(this.trackCanvas);
             }
             
-            updateTrack() {
-                if (!this.trackCtx || this.locationHistory.length < 2) return;
+            // Convert lat/lng to tile coordinates
+            latLngToTile(lat, lng, zoom) {
+                const x = Math.floor((lng + 180) / 360 * Math.pow(2, zoom));
+                const y = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom));
+                return { x, y };
+            }
+            
+            // Convert tile coordinates to lat/lng
+            tileToLatLng(x, y, zoom) {
+                const n = Math.PI - 2 * Math.PI * y / Math.pow(2, zoom);
+                const lat = 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+                const lng = x / Math.pow(2, zoom) * 360 - 180;
+                return { lat, lng };
+            }
+            
+            // Load map tile
+            loadTile(x, y, zoom) {
+                const tileKey = `${zoom}/${x}/${y}`;
+                if (this.mapTiles.has(tileKey)) {
+                    return this.mapTiles.get(tileKey);
+                }
+                
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                const tilePromise = new Promise((resolve, reject) => {
+                    img.onload = () => resolve(img);
+                    img.onerror = () => reject(new Error(`Failed to load tile ${tileKey}`));
+                });
+                
+                // Use OpenStreetMap tile server
+                img.src = `https://tile.openstreetmap.org/${zoom}/${x}/${y}.png`;
+                
+                this.mapTiles.set(tileKey, tilePromise);
+                return tilePromise;
+            }
+            
+            // Get pixel position within a tile
+            getPixelInTile(lat, lng, zoom) {
+                const tile = this.latLngToTile(lat, lng, zoom);
+                const tileLatLng = this.tileToLatLng(tile.x, tile.y, zoom);
+                const nextTileLatLng = this.tileToLatLng(tile.x + 1, tile.y + 1, zoom);
+                
+                const pixelX = ((lng - tileLatLng.lng) / (nextTileLatLng.lng - tileLatLng.lng)) * this.tileSize;
+                const pixelY = ((lat - tileLatLng.lat) / (nextTileLatLng.lat - tileLatLng.lat)) * this.tileSize;
+                
+                return { x: pixelX, y: pixelY, tileX: tile.x, tileY: tile.y };
+            }
+            
+            async updateTrack() {
+                if (!this.trackCtx || this.locationHistory.length < 1) return;
                 
                 // Clear canvas
                 this.trackCtx.clearRect(0, 0, this.trackCanvas.width, this.trackCanvas.height);
@@ -390,71 +441,94 @@
                 const centerX = this.trackCanvas.width / 2;
                 const centerY = this.trackCanvas.height / 2;
                 
-                // Find the extent of movement to determine scale
-                const lats = this.locationHistory.map(p => p.lat);
-                const lngs = this.locationHistory.map(p => p.lng);
-                const latRange = Math.max(...lats) - Math.min(...lats);
-                const lngRange = Math.max(...lngs) - Math.min(...lngs);
+                // Get current position in tile coordinates
+                const currentPixel = this.getPixelInTile(currentPos.lat, currentPos.lng, this.currentZoom);
                 
-                // Determine scale to fit track nicely on screen
-                const maxRange = Math.max(latRange, lngRange, 0.002); // Minimum range
-                const scale = Math.min(this.trackCanvas.width, this.trackCanvas.height) * 0.7 / maxRange;
+                // Calculate which tiles we need to cover the screen
+                const tilesX = Math.ceil(this.trackCanvas.width / this.tileSize) + 1;
+                const tilesY = Math.ceil(this.trackCanvas.height / this.tileSize) + 1;
                 
-                // Map coordinates to screen space - geographic mapping with current position at center
+                const startTileX = currentPixel.tileX - Math.floor(tilesX / 2);
+                const startTileY = currentPixel.tileY - Math.floor(tilesY / 2);
+                
+                // Load and draw map tiles
+                for (let tileX = startTileX; tileX < startTileX + tilesX; tileX++) {
+                    for (let tileY = startTileY; tileY < startTileY + tilesY; tileY++) {
+                        try {
+                            const tile = await this.loadTile(tileX, tileY, this.currentZoom);
+                            
+                            // Calculate tile position on screen
+                            const screenX = centerX + (tileX - currentPixel.tileX) * this.tileSize - currentPixel.x;
+                            const screenY = centerY + (tileY - currentPixel.tileY) * this.tileSize - currentPixel.y;
+                            
+                            this.trackCtx.drawImage(tile, screenX, screenY, this.tileSize, this.tileSize);
+                        } catch (error) {
+                            // Tile failed to load, draw placeholder
+                            const screenX = centerX + (tileX - currentPixel.tileX) * this.tileSize - currentPixel.x;
+                            const screenY = centerY + (tileY - currentPixel.tileY) * this.tileSize - currentPixel.y;
+                            
+                            this.trackCtx.fillStyle = '#333';
+                            this.trackCtx.fillRect(screenX, screenY, this.tileSize, this.tileSize);
+                            this.trackCtx.strokeStyle = '#666';
+                            this.trackCtx.strokeRect(screenX, screenY, this.tileSize, this.tileSize);
+                        }
+                    }
+                }
+                
+                // Function to convert lat/lng to screen coordinates
                 const mapToScreen = (lat, lng) => {
-                    // Calculate relative position from current location
-                    const deltaLat = lat - currentPos.lat;
-                    const deltaLng = lng - currentPos.lng;
-                    
-                    // Convert to screen coordinates (north = up, east = right)
-                    const x = centerX + (deltaLng * scale * 111320 * Math.cos(currentPos.lat * Math.PI / 180)) / 111320; // Adjust for longitude convergence
-                    const y = centerY - (deltaLat * scale * 111320) / 111320; // North is up (negative Y)
-                    
-                    return { x, y };
+                    const pixel = this.getPixelInTile(lat, lng, this.currentZoom);
+                    const screenX = centerX + (pixel.tileX - currentPixel.tileX) * this.tileSize + pixel.x - currentPixel.x;
+                    const screenY = centerY + (pixel.tileY - currentPixel.tileY) * this.tileSize + pixel.y - currentPixel.y;
+                    return { x: screenX, y: screenY };
                 };
                 
-                // Draw track line
-                this.trackCtx.strokeStyle = '#00ff0033';
-                this.trackCtx.lineWidth = 3;
-                this.trackCtx.lineCap = 'round';
-                this.trackCtx.lineJoin = 'round';
-                this.trackCtx.beginPath();
-                
-                const firstPoint = mapToScreen(this.locationHistory[0].lat, this.locationHistory[0].lng);
-                this.trackCtx.moveTo(firstPoint.x, firstPoint.y);
-                
-                // Draw line from oldest to newest
-                for (let i = 1; i < this.locationHistory.length; i++) {
-                    const point = mapToScreen(this.locationHistory[i].lat, this.locationHistory[i].lng);
-                    this.trackCtx.lineTo(point.x, point.y);
-                }
-                
-                this.trackCtx.stroke();
-                
-                // Draw speed-colored dots
-                for (let i = 0; i < this.locationHistory.length; i += 3) { // Every 3rd point
-                    const location = this.locationHistory[i];
-                    const point = mapToScreen(location.lat, location.lng);
-                    const speed = location.speed * 3.6; // Convert to km/h
-                    
-                    // Color based on speed
-                    let color;
-                    if (speed < 10) color = '#00ff00';      // Green for slow
-                    else if (speed < 50) color = '#ffff00';  // Yellow for medium
-                    else color = '#ff0000';                  // Red for fast
-                    
-                    this.trackCtx.fillStyle = color + '88'; // Semi-transparent
+                // Draw track line if we have enough points
+                if (this.locationHistory.length > 1) {
+                    this.trackCtx.strokeStyle = '#ff0000';
+                    this.trackCtx.lineWidth = 4;
+                    this.trackCtx.lineCap = 'round';
+                    this.trackCtx.lineJoin = 'round';
                     this.trackCtx.beginPath();
-                    this.trackCtx.arc(point.x, point.y, 3, 0, Math.PI * 2);
-                    this.trackCtx.fill();
+                    
+                    const firstPoint = mapToScreen(this.locationHistory[0].lat, this.locationHistory[0].lng);
+                    this.trackCtx.moveTo(firstPoint.x, firstPoint.y);
+                    
+                    // Draw line from oldest to newest
+                    for (let i = 1; i < this.locationHistory.length; i++) {
+                        const point = mapToScreen(this.locationHistory[i].lat, this.locationHistory[i].lng);
+                        this.trackCtx.lineTo(point.x, point.y);
+                    }
+                    
+                    this.trackCtx.stroke();
+                    
+                    // Draw speed-colored dots
+                    for (let i = 0; i < this.locationHistory.length; i += 3) {
+                        const location = this.locationHistory[i];
+                        const point = mapToScreen(location.lat, location.lng);
+                        const speed = location.speed * 3.6;
+                        
+                        let color;
+                        if (speed < 10) color = '#00ff00';
+                        else if (speed < 50) color = '#ffff00';
+                        else color = '#ff8800';
+                        
+                        this.trackCtx.fillStyle = color;
+                        this.trackCtx.beginPath();
+                        this.trackCtx.arc(point.x, point.y, 4, 0, Math.PI * 2);
+                        this.trackCtx.fill();
+                        this.trackCtx.strokeStyle = '#000';
+                        this.trackCtx.lineWidth = 1;
+                        this.trackCtx.stroke();
+                    }
                 }
                 
-                // Draw current position at center (always at centerX, centerY)
-                this.trackCtx.fillStyle = '#00ff00';
+                // Draw current position at center
+                this.trackCtx.fillStyle = '#ff0000';
                 this.trackCtx.strokeStyle = '#ffffff';
-                this.trackCtx.lineWidth = 2;
+                this.trackCtx.lineWidth = 3;
                 this.trackCtx.beginPath();
-                this.trackCtx.arc(centerX, centerY, 8, 0, Math.PI * 2);
+                this.trackCtx.arc(centerX, centerY, 10, 0, Math.PI * 2);
                 this.trackCtx.fill();
                 this.trackCtx.stroke();
             }
