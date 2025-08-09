@@ -321,10 +321,10 @@ class Game {
                             }
                         });
                         
-                        // Update high score if any player's score exceeds it
-                        const maxScore = Math.max(...this.players.map(p => p.score));
-                        if (maxScore > this.highScore) {
-                            this.highScore = maxScore;
+                        // Update high score if shared score exceeds it
+                        const sharedScore = this.players[0].score + this.players[1].score;
+                        if (sharedScore > this.highScore) {
+                            this.highScore = sharedScore;
                             this.saveHighScore();
                         }
                     }
@@ -653,11 +653,9 @@ class Game {
     }
     
     updateUI() {
-        // Show both players' scores
-        const player1Score = this.players[0].score;
-        const player2Score = this.players[1].score;
-        document.getElementById('score').textContent = `P1: ${player1Score} | P2: ${player2Score}`;
-        document.getElementById('highScore').textContent = this.highScore;
+        // Show shared score (sum of both players)
+        const sharedScore = this.players[0].score + this.players[1].score;
+        document.getElementById('score').textContent = sharedScore;
     }
     
     togglePause() {
@@ -749,8 +747,8 @@ class Game {
     
     gameOver() {
         this.gameRunning = false;
-        const highestScore = Math.max(...this.players.map(p => p.score));
-        document.getElementById('finalScore').textContent = highestScore;
+        const sharedScore = this.players[0].score + this.players[1].score;
+        document.getElementById('finalScore').textContent = sharedScore;
         document.getElementById('gameOver').style.display = 'block';
     }
     

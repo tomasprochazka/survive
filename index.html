@@ -221,28 +221,7 @@
         <canvas id="gameCanvas"></canvas>
         
         <div class="score-display score-left">
-            <div>SCORE</div>
             <div id="score">0</div>
-        </div>
-        
-        <div class="score-display score-right">
-            <div>HIGH SCORE</div>
-            <div id="highScore">0</div>
-        </div>
-        
-
-        
-        <div class="game-info">
-            <div>Multiplayer Survive - Player 2 (Orange): Tap Upper Half | Player 1 (Blue): Tap Lower Half</div>
-        </div>
-        
-        <!-- Visual divider for multiplayer zones -->
-        <div class="screen-divider"></div>
-        
-        <!-- Player zone labels -->
-        <div class="player-zones">
-            <div class="player-zone-label player-2-zone">Player 2 Zone (Orange) - Tap Here</div>
-            <div class="player-zone-label player-1-zone">Player 1 Zone (Blue) - Tap Here</div>
         </div>
         
         <div class="game-over" id="gameOver">
@@ -256,6 +235,10 @@
             <div class="debug-toggle" onclick="toggleDebugPanel()">⚙️</div>
             <div class="debug-content" id="debugContent">
                 <h3>Debug Controls</h3>
+                <div class="debug-section">
+                    <h4>Game Mode</h4>
+                    <button id="cheatModeToggle" style="background: #DC2626; color: white; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer; font-size: 12px;">Toggle Cheat Mode</button>
+                </div>
                 <div class="debug-section">
                     <h4>Alien</h4>
                     <label>Size: <input type="range" id="alienSize" min="50" max="300" step="10" value="180"></label>
@@ -280,10 +263,6 @@
                     <span id="fireballMinCountValue">3</span>
                     <label>Max Count: <input type="range" id="fireballMaxCount" min="1" max="10" step="1" value="7"></label>
                     <span id="fireballMaxCountValue">7</span>
-                </div>
-                <div class="debug-section">
-                    <h4>Game Mode</h4>
-                    <button id="cheatModeToggle" style="background: #DC2626; color: white; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer; font-size: 12px;">Toggle Cheat Mode</button>
                 </div>
             </div>
         </div>
