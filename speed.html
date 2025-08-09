@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
     <title>GPS Speed Tracker</title>
     <style>
         body {
@@ -17,6 +17,9 @@
             align-items: center;
             justify-content: center;
             position: relative;
+            touch-action: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
         }
         
         .track-canvas {
@@ -26,7 +29,7 @@
             width: 100vw;
             height: 100vh;
             z-index: -1;
-            pointer-events: none;
+            touch-action: none;
         }
 
         .speed-container {
@@ -663,25 +666,23 @@
             }
             
             setupZoomControls() {
-                // Touch start
-                this.trackCanvas.addEventListener('touchstart', (e) => {
-                    e.preventDefault();
-                    this.touches = Array.from(e.touches).map(touch => ({
-                        id: touch.identifier,
-                        x: touch.clientX,
-                        y: touch.clientY
-                    }));
-                    
-                    if (this.touches.length === 2) {
+                // Add touch event listeners to the entire document to capture all gestures
+                document.addEventListener('touchstart', (e) => {
+                    if (e.touches.length === 2) {
+                        e.preventDefault();
+                        this.touches = Array.from(e.touches).map(touch => ({
+                            id: touch.identifier,
+                            x: touch.clientX,
+                            y: touch.clientY
+                        }));
                         this.isZooming = true;
                         this.lastPinchDistance = this.getPinchDistance();
                     }
                 }, { passive: false });
                 
-                // Touch move
-                this.trackCanvas.addEventListener('touchmove', (e) => {
-                    e.preventDefault();
-                    if (this.isZooming && e.touches.length === 2) {
+                document.addEventListener('touchmove', (e) => {
+                    if (e.touches.length === 2 && this.isZooming) {
+                        e.preventDefault();
                         this.touches = Array.from(e.touches).map(touch => ({
                             id: touch.identifier,
                             x: touch.clientX,
@@ -692,7 +693,7 @@
                         const distanceChange = currentDistance - this.lastPinchDistance;
                         
                         // Zoom threshold to prevent too sensitive zooming
-                        if (Math.abs(distanceChange) > 10) {
+                        if (Math.abs(distanceChange) > 20) {
                             if (distanceChange > 0) {
                                 this.zoomIn();
                             } else {
@@ -703,22 +704,28 @@
                     }
                 }, { passive: false });
                 
-                // Touch end
-                this.trackCanvas.addEventListener('touchend', (e) => {
-                    e.preventDefault();
-                    this.touches = Array.from(e.touches).map(touch => ({
-                        id: touch.identifier,
-                        x: touch.clientX,
-                        y: touch.clientY
-                    }));
-                    
-                    if (this.touches.length < 2) {
-                        // Delay resetting isZooming to prevent accidental mode switches
-                        setTimeout(() => {
-                            this.isZooming = false;
-                        }, 300);
+                document.addEventListener('touchend', (e) => {
+                    if (this.isZooming) {
+                        e.preventDefault();
+                        this.touches = Array.from(e.touches).map(touch => ({
+                            id: touch.identifier,
+                            x: touch.clientX,
+                            y: touch.clientY
+                        }));
+                        
+                        if (this.touches.length < 2) {
+                            // Delay resetting isZooming to prevent accidental mode switches
+                            setTimeout(() => {
+                                this.isZooming = false;
+                            }, 500);
+                        }
                     }
                 }, { passive: false });
+                
+                // Prevent default zoom on mobile
+                document.addEventListener('gesturestart', (e) => e.preventDefault());
+                document.addEventListener('gesturechange', (e) => e.preventDefault());
+                document.addEventListener('gestureend', (e) => e.preventDefault());
                 
                 // Mouse wheel zoom for desktop
                 this.trackCanvas.addEventListener('wheel', (e) => {
